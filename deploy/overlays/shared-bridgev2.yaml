@@ -1,0 +1,31 @@
+# Applied to every bridgev2 bridge on top of its upstream example config.
+# Keys must already exist upstream; `!replace` swaps a whole map.
+homeserver:
+    address: http://synapse:8008
+    domain: {{.Domain}}
+    software: standard
+    status_endpoint: {{.HubURL}}/internal/bridge-state/{{.ID}}
+    message_send_checkpoint_endpoint: {{.HubURL}}/internal/checkpoint/{{.ID}}
+appservice:
+    address: http://mautrix-{{.ID}}:{{.Port}}
+    hostname: 0.0.0.0
+database:
+    type: postgres
+    uri: postgres://{{.DBUser}}:{{.DBPassword}}@postgres/{{.DBName}}?sslmode=disable
+bridge:
+    permissions: !replace
+        "{{.Domain}}": user
+        "{{.OwnerMXID}}": admin
+    personal_filtering_spaces: true
+matrix:
+    message_status_events: true
+    delivery_receipts: true
+provisioning:
+    shared_secret: {{.ProvisioningSecret}}
+double_puppet:
+    secrets: !replace
+        {{.Domain}}: as_token:{{.DoublePuppetAS}}
+backfill:
+    enabled: true
+encryption:
+    allow: false

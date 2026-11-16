@@ -1,0 +1,55 @@
+Switchboard, November 2026 (against v0.2610.0): relay Signal call messages
+for the app, which runs RingRTC itself. signalmeow raises every call message
+it receives as an events.CallSignal, the connector passes it to
+handleCallSignal (both in overlay/), and SendMessage stamps outgoing call
+messages with the current time, as it does sync and receipt messages.
+
+diff --git a/pkg/connector/handlesignal.go b/pkg/connector/handlesignal.go
+index a25b77a..b95bed3 100644
+--- a/pkg/connector/handlesignal.go
++++ b/pkg/connector/handlesignal.go
+@@ -67,6 +67,8 @@ func (s *SignalClient) handleSignalEvent(rawEvt events.SignalEvent) bool {
+ 		return s.handleSignalMessageRequestResponse(evt)
+ 	case *events.Call:
+ 		return s.Main.Bridge.QueueRemoteEvent(s.UserLogin, s.wrapCallEvent(evt)).Success
++	case *events.CallSignal:
++		return s.handleCallSignal(evt)
+ 	case *events.ContactList:
+ 		s.handleSignalContactList(evt)
+ 	case *events.ACIFound:
+diff --git a/pkg/signalmeow/receiving.go b/pkg/signalmeow/receiving.go
+index f0d69df..b2275c4 100644
+--- a/pkg/signalmeow/receiving.go
++++ b/pkg/signalmeow/receiving.go
+@@ -656,6 +656,17 @@ func (cli *Client) handleDecryptedResult(
+ 				IsRinging: content.CallMessage.Offer != nil,
+ 			})
+ 		}
++		if !isBlocked && handlerSuccess {
++			handlerSuccess = cli.handleEvent(&events.CallSignal{
++				Info: events.MessageInfo{
++					Sender:          theirServiceID.UUID,
++					ChatID:          theirServiceID.String(),
++					ServerTimestamp: envelope.GetServerTimestamp(),
++				},
++				SenderDeviceID: uint32(deviceID),
++				Message:        content.CallMessage,
++			})
++		}
+ 	case *signalpb.Content_DecryptionErrorMessage:
+ 		// These should've been handled earlier
+ 		log.Warn().Msg("Unexpected decryption error message content in decrypted message")
+diff --git a/pkg/signalmeow/sending.go b/pkg/signalmeow/sending.go
+index f48a252..397fd84 100644
+--- a/pkg/signalmeow/sending.go
++++ b/pkg/signalmeow/sending.go
+@@ -723,7 +723,8 @@ func (cli *Client) SendMessage(ctx context.Context, recipientID libsignalgo.Serv
+ 	case *signalpb.Content_SyncMessage,
+ 		*signalpb.Content_NullMessage,
+ 		*signalpb.Content_ReceiptMessage,
+-		*signalpb.Content_DecryptionErrorMessage:
++		*signalpb.Content_DecryptionErrorMessage,
++		*signalpb.Content_CallMessage:
+ 		messageTimestamp = currentMessageTimestamp()
+ 	case *signalpb.Content_StoryMessage:
+ 		// not yet supported

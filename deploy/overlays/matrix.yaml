@@ -1,0 +1,2 @@
+network:
+    pickle_key: {{gen "MATRIX_PICKLE_KEY"}}

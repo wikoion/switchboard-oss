@@ -1,0 +1,4 @@
+note_to_self.svg: drawn for Switchboard. A circle in the app's accent colour
+(lib/src/ui/theme.dart) with the Material Icons "edit_note" glyph, from
+https://github.com/google/material-design-icons
+(src/editor/edit_note/materialicons/24px.svg), Apache-2.0.

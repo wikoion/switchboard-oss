@@ -1,0 +1,6 @@
+ringtone.ogg: generated for Switchboard with FFmpeg 9.0.2, so it carries no
+third-party rights. A 400 Hz + 450 Hz tone in the UK ring cadence (0.4 s on,
+0.2 s off, 0.4 s on, 2 s off), 3 s long so it loops. The native Vorbis
+encoder only writes stereo, hence -ac 2. Run from this directory:
+
+ffmpeg -f lavfi -i "aevalsrc=exprs='0.35*(sin(2*PI*400*t)+sin(2*PI*450*t))*(clip(min(t,0.4-t)/0.01,0,1)+clip(min(t-0.6,1-t)/0.01,0,1))':s=48000:d=3" -ac 2 -c:a vorbis -strict experimental -map_metadata -1 -fflags +bitexact -flags:a +bitexact ringtone.ogg

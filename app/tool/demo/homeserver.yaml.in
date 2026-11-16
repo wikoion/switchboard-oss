@@ -1,0 +1,41 @@
+# Demo homeserver for README screenshots. Written by demo.sh; secrets are
+# filled in at start.
+server_name: "@DOMAIN@"
+public_baseurl: "@PUBLIC_URL@/"
+report_stats: false
+pid_file: /data/homeserver.pid
+listeners:
+  - port: 8008
+    type: http
+    tls: false
+    x_forwarded: true
+    bind_addresses: ["0.0.0.0"]
+    resources:
+      - names: [client]
+        compress: false
+database:
+  name: sqlite3
+  args:
+    database: /data/homeserver.db
+log_config: /config/log.config
+signing_key_path: /config/signing.key
+media_store_path: /data/media
+dynamic_thumbnails: true
+enable_registration: false
+registration_shared_secret: "@REG_SECRET@"
+macaroon_secret_key: "@MACAROON@"
+form_secret: "@FORM@"
+federation_domain_whitelist: []
+trusted_key_servers: []
+suppress_key_server_warning: true
+presence:
+  enabled: false
+url_preview_enabled: false
+rc_message:
+  per_second: 100
+  burst_count: 1000
+rc_login:
+  address: {per_second: 100, burst_count: 1000}
+  account: {per_second: 100, burst_count: 1000}
+app_service_config_files:
+  - /config/demo-as.yaml

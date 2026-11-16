@@ -1,0 +1,6 @@
+Network glyphs from Simple Icons 16.36.0 (https://simpleicons.org), CC0-1.0,
+except linkedin.svg and slack.svg. Simple Icons removed those two brands' logos
+at the brands' request, so they're generic Material Icons glyphs instead: "work"
+for LinkedIn and "tag" for Slack, from https://github.com/google/material-design-icons,
+Apache-2.0.
+Brand names and logos belong to their owners.

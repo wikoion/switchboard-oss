@@ -1,0 +1,51 @@
+[package]
+name = "switchboard_core"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+anyhow = "1.0.104"
+eyeball-im = "0.9.1"
+flutter_rust_bridge = "=2.13.0"
+futures-util = "0.3.34"
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
+indexmap = "2.14.2"
+matrix-sdk = { version = "0.19.1", features = ["bundled-sqlite", "markdown"] }
+matrix-sdk-ui = "0.19.1"
+matrix-sdk-base = "0.19.1"
+mime = "0.3"
+# The search index. The same version matrix-sdk-sqlite uses, so one SQLite
+# (bundled, with FTS5) is linked.
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+# The call event's bytes.
+base64 = "0.22.1"
+
+# Signal calls on Linux. iOS runs RingRTC through Signal's Swift package
+# (app/ios/SwitchboardRingRTC) instead.
+[target.'cfg(target_os = "linux")'.dependencies]
+log = "0.4.29"
+ringrtc = { git = "https://github.com/signalapp/ringrtc", tag = "v2.74.0", features = ["prebuilt_webrtc"] }
+v4l = "0.14.0"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
+
+# Debug app builds still need fast crypto and SQLite: optimise dependencies.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

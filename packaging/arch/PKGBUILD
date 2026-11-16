@@ -1,0 +1,69 @@
+# Builds the Linux app from this repo's committed HEAD.
+#   yay -Bi packaging/arch      (or: cd packaging/arch && makepkg -si)
+# Needs Flutter 3.47.9: set FLUTTER_ROOT, default ~/development/flutter.
+# The sign-in screen's default server is SB_DEFAULT_SERVER, from the
+# environment or the checkout's git-ignored app/tool/local.env.
+# The Rust core builds with rustup's stable toolchain (cargokit runs
+# `rustup run stable`), which must be 1.99.1 or later.
+
+pkgname=switchboard-git
+pkgver=0
+pkgrel=1
+pkgdesc='Switchboard: self-hosted alternative to Beeper, desktop app'
+arch=('x86_64')
+url='https://github.com/wikoion/switchboard-oss'
+license=('AGPL-3.0-or-later')
+depends=(
+  'gtk3'
+  'webkit2gtk-4.1'           # web sign-in for Instagram, Slack, Discord
+  'libsecret'                # session and store key
+  'mpv'                      # libmpv, loaded at start by media_kit
+  'libayatana-appindicator'  # tray icon
+  'ffmpeg'                   # voice notes: record_linux encodes with ffmpeg
+  'libpulse'                 # voice notes: parecord
+)
+optdepends=(
+  'gnome-keyring: a Secret Service to keep the session in'
+  'xdg-desktop-portal-gtk: file chooser for attachments and Save as'
+)
+makedepends=('git' 'clang' 'cmake' 'ninja' 'pkgconf' 'rustup' 'patchelf')
+provides=('switchboard')
+conflicts=('switchboard')
+# lto adds -flto=auto to the CMake build; strip would touch the Dart AOT
+# library.
+options=('!lto' '!debug' '!strip')
+source=("switchboard::git+file://$(realpath "$startdir/../..")")
+sha256sums=('SKIP')
+
+_flutter() {
+  "${FLUTTER_ROOT:-$HOME/development/flutter}/bin/flutter" "$@"
+}
+
+pkgver() {
+  cd switchboard
+  printf 'r%s.%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+build() {
+  cd switchboard/app
+  local env="$startdir/../../app/tool/local.env"
+  [ -n "${SB_DEFAULT_SERVER:-}" ] || [ ! -f "$env" ] || . "$env"
+  _flutter pub get
+  _flutter build linux --release --dart-define=SB_DEFAULT_SERVER="${SB_DEFAULT_SERVER:-}"
+}
+
+package() {
+  cd switchboard/app
+  install -d "$pkgdir/usr/lib/switchboard" "$pkgdir/usr/bin"
+  cp -a build/linux/x64/release/bundle/. "$pkgdir/usr/lib/switchboard/"
+  # Flutter links plugins with a RUNPATH into the build tree.
+  patchelf --set-rpath '$ORIGIN' "$pkgdir"/usr/lib/switchboard/lib/*_plugin.so
+  # The binary finds data/ and lib/ beside its real path.
+  ln -s /usr/lib/switchboard/switchboard "$pkgdir/usr/bin/switchboard"
+  install -Dm644 linux/packaging/com.richarddraycott.switchboard.desktop \
+    "$pkgdir/usr/share/applications/com.richarddraycott.switchboard.desktop"
+  install -Dm644 assets/icon/switchboard.svg \
+    "$pkgdir/usr/share/icons/hicolor/scalable/apps/com.richarddraycott.switchboard.svg"
+  install -Dm644 assets/icon/switchboard-256.png \
+    "$pkgdir/usr/share/icons/hicolor/256x256/apps/com.richarddraycott.switchboard.png"
+}

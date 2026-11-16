@@ -1,0 +1,8 @@
+switchboard.svg: drawn for Switchboard. The accent colour from
+lib/src/ui/theme.dart with the Material Icons "forum" glyph, from
+https://github.com/google/material-design-icons, Apache-2.0.
+switchboard-unread.svg: the same with an unread dot, for the tray.
+switchboard-256.png, tray.png and tray-unread.png: renders of those two SVGs
+(256 px for the Linux desktop entry, 64 px for the tray).
+The iOS app icons (ios/Runner/Assets.xcassets/AppIcon.appiconset) are renders of
+switchboard.svg without its rounded corners (iOS rounds them), flattened to RGB.

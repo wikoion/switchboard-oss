@@ -1,0 +1,16 @@
+# Switchboard install settings. sb init writes deploy/switchboard.yaml from
+# its flags, and sb enable, disable and push keep it up to date. To start
+# from this file instead, copy it to switchboard.yaml, fill it in and run
+# sb init. switchboard.yaml is git-ignored: it holds this install's values.
+domain: switchboard.internal
+# Localpart of your Matrix account.
+owner: me
+# HTTPS URL devices use: the switchboard node on your tailnet.
+public_url: https://switchboard.example.ts.net
+# Filled in by sb enable.
+bridges: []
+# iOS push, set by: sb push <APNS_KEY_ID> <TEAM_ID> <BUNDLE_ID>
+# push:
+#     apns_key_id: <APNS_KEY_ID>
+#     apns_team_id: <TEAM_ID>
+#     apns_topic: <BUNDLE_ID>

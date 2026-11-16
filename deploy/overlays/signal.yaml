@@ -1,0 +1,6 @@
+network:
+    # Single-user server, so the phone's contact photos are safe to use.
+    # Without them a contact only gets a picture once Signal shares their
+    # profile key, which leaves most chats without one.
+    use_contact_avatars: true
+    use_outdated_profiles: true

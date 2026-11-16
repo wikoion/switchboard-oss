@@ -1,0 +1,15 @@
+{
+	admin off
+	auto_https off
+}
+
+:80 {
+	route {
+		@wellknown path /.well-known/matrix/client
+		header @wellknown Content-Type application/json
+		respond @wellknown `{"m.homeserver":{"base_url":"@PUBLIC_URL@"}}` 200
+
+		reverse_proxy /_switchboard/* host.docker.internal:@HUB_PORT@
+		reverse_proxy sbdemo-synapse:8008
+	}
+}

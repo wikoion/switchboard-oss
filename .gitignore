@@ -1,0 +1,8 @@
+/bin/
+/deploy/.env
+/deploy/switchboard.yaml
+/deploy/secrets/
+/deploy/config/
+/deploy/appservices/
+/deploy/compose.bridges.yml
+/deploy/.docker/

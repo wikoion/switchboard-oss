@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Switchboard
+GenericName=Messenger
+Comment=All your chats in one inbox
+Exec=switchboard
+Icon=com.richarddraycott.switchboard
+Terminal=false
+Categories=Network;InstantMessaging;Chat;
+Keywords=Matrix;WhatsApp;Signal;Telegram;Beeper;
+StartupWMClass=com.richarddraycott.switchboard

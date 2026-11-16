@@ -1,0 +1,5 @@
+# RingRTC's build script downloads Signal's prebuilt WebRTC into OUTPUT_DIR.
+# Without this it lands inside ~/.cargo/git/checkouts. Lives at the repo root
+# because cargokit runs cargo from the Flutter build folder.
+[env]
+OUTPUT_DIR = { value = "core/target/ringrtc", relative = true }

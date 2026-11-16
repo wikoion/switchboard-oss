@@ -1,0 +1,9 @@
+# Key that encrypts the outside accounts' end-to-end encryption keys in the
+# database. Set it once; changing it loses access to stored keys.
+pickle_key: generate
+# Device name the outside accounts see in their session lists.
+device_name: Switchboard
+# Most members to bring into one portal. Large public rooms stop here.
+max_members: 250
+# Join rooms the outside account is invited to, so new chats show up.
+auto_join_invites: true

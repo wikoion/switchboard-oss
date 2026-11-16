@@ -1,0 +1,17 @@
+Upstream e2e994f (after v0.2610.0), backported November 2026: Signal now
+answers 400 to an upload form request without uploadLength, so every
+attachment from Matrix failed.
+
+diff --git a/pkg/signalmeow/attachments.go b/pkg/signalmeow/attachments.go
+index 0b5f7e2..8f36391 100644
+--- a/pkg/signalmeow/attachments.go
++++ b/pkg/signalmeow/attachments.go
+@@ -277,7 +277,7 @@ func (cli *Client) UploadAttachment(ctx context.Context, body []byte) (*signalpb
+ 	}
+ 
+ 	// Get upload attributes from Signal server
+-	attributesPath := "/v4/attachments/form/upload"
++	attributesPath := fmt.Sprintf("/v4/attachments/form/upload?uploadLength=%d", len(encryptedWithMAC))
+ 	resp, err := cli.AuthedWS.SendRequest(ctx, http.MethodGet, attributesPath, nil, nil)
+ 	if err != nil {
+ 		log.Err(err).Msg("Failed to request upload attributes")

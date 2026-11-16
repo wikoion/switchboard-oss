@@ -1,0 +1,14 @@
+{
+  "pins" : [
+    {
+      "identity" : "ringrtc",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/signalapp/ringrtc",
+      "state" : {
+        "revision" : "bdbb0dd1b9f418850dfe1fa3cd4b1c2b1123436f",
+        "version" : "2.74.0"
+      }
+    }
+  ],
+  "version" : 2
+}

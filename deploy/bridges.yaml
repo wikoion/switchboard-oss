@@ -1,0 +1,78 @@
+# Bridge catalogue. `sb enable <id>` turns one on; tags live in versions.env.
+# kind: bridgev2 bridges share overlays/shared-bridgev2.yaml and the v3
+# provisioning API. legacy bridges are linked through bot commands.
+whatsapp:
+  network: WhatsApp
+  image: dock.mau.dev/mautrix/whatsapp
+  tag: WHATSAPP_TAG
+  kind: bridgev2
+# Built from bridges/signal: upstream at a pinned tag plus the call
+# signalling relay the app's Signal calls need.
+signal:
+  network: Signal
+  image: switchboard/mautrix-signal
+  tag: SIGNAL_TAG
+  kind: bridgev2
+  build: ../bridges/signal
+telegram:
+  network: Telegram
+  image: dock.mau.dev/mautrix/telegram
+  tag: TELEGRAM_TAG
+  kind: bridgev2
+  requires: [TELEGRAM_API_ID, TELEGRAM_API_HASH]
+messenger:
+  network: Messenger
+  image: dock.mau.dev/mautrix/meta
+  tag: META_TAG
+  kind: bridgev2
+instagram:
+  network: Instagram
+  image: dock.mau.dev/mautrix/meta
+  tag: INSTAGRAM_TAG
+  kind: bridgev2
+twitter:
+  network: X
+  image: dock.mau.dev/mautrix/twitter
+  tag: TWITTER_TAG
+  kind: bridgev2
+linkedin:
+  network: LinkedIn
+  image: dock.mau.dev/mautrix/linkedin
+  tag: LINKEDIN_TAG
+  kind: bridgev2
+slack:
+  network: Slack
+  image: dock.mau.dev/mautrix/slack
+  tag: SLACK_TAG
+  kind: bridgev2
+gmessages:
+  network: Google Messages
+  image: dock.mau.dev/mautrix/gmessages
+  tag: GMESSAGES_TAG
+  kind: bridgev2
+bluesky:
+  network: Bluesky
+  image: dock.mau.dev/mautrix/bluesky
+  tag: BLUESKY_TAG
+  kind: bridgev2
+gvoice:
+  network: Google Voice
+  image: dock.mau.dev/mautrix/gvoice
+  tag: GVOICE_TAG
+  kind: bridgev2
+# The bridgev2 rewrite (branch megadiscord), pinned by digest in
+# versions.env until it gets monthly tags like the others.
+discord:
+  network: Discord
+  image: dock.mau.dev/mautrix/discord
+  tag: DISCORD_TAG
+  kind: bridgev2
+# Outside Matrix accounts (matrix.org and others). This server can't
+# federate, so this bridge, built from bridges/matrix, is how it reaches
+# the Matrix network.
+matrix:
+  network: Matrix
+  image: switchboard/sb-matrix
+  tag: MATRIX_TAG
+  kind: bridgev2
+  build: ../bridges/matrix

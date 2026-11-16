@@ -1,0 +1,15 @@
+# Plays the bridges: owns the contacts (ghost users) and, like the
+# double-puppet registration, may act as the owner, so the seed can
+# backdate messages with ?ts= as bridges do.
+id: sbdemo
+url: null
+as_token: "@AS_TOKEN@"
+hs_token: "@HS_TOKEN@"
+sender_localpart: sbdemo-bridge
+rate_limited: false
+namespaces:
+  users:
+    - regex: '@[a-z]+_.*:@DOMAIN_RE@'
+      exclusive: true
+    - regex: '@@OWNER@:@DOMAIN_RE@'
+      exclusive: false

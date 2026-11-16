@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1340" height="600" viewBox="0 0 1340 600" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <rect width="1340" height="600" fill="#ffffff"/>
+  <text x="42" y="52" font-size="26" font-weight="600" fill="#1a1a1a">Beeper is off every device after about ten weeks</text>
+  <text x="42" y="86" font-size="18" fill="#6b6b6b">Estimates for one developer; bands not to scale</text>
+
+  <g font-size="19" fill="#1a1a1a">
+    <g transform="translate(42 120)">
+      <rect width="284" height="330" rx="14" fill="#ffffff" stroke="#cfcabd" stroke-width="2"/>
+      <text x="22" y="44" font-size="21" font-weight="600">M0 · Backend</text>
+      <text x="22" y="76" fill="#6b6b6b">about 2 weeks</text>
+      <line x1="22" y1="96" x2="262" y2="96" stroke="#e2ded4" stroke-width="2"/>
+      <text x="22" y="136">Compose stack, sb CLI</text>
+      <text x="22" y="168">Hub skeleton</text>
+      <text x="22" y="200">WhatsApp, Signal,</text>
+      <text x="22" y="232">Telegram bridges</text>
+      <text x="22" y="264">Smoke test: sb test</text>
+    </g>
+    <g transform="translate(368 120)">
+      <rect width="284" height="330" rx="14" fill="#ffffff" stroke="#cfcabd" stroke-width="2"/>
+      <text x="22" y="44" font-size="21" font-weight="600">M1 · iOS app</text>
+      <text x="22" y="76" fill="#6b6b6b">about 4 weeks</text>
+      <line x1="22" y1="96" x2="262" y2="96" stroke="#e2ded4" stroke-width="2"/>
+      <text x="22" y="136">Rust core, Flutter</text>
+      <text x="22" y="168">iOS first</text>
+      <text x="22" y="200">List, timeline, send</text>
+      <text x="22" y="232">In-app account linking</text>
+      <text x="22" y="264">Accounts and health</text>
+    </g>
+    <g transform="translate(693 120)">
+      <rect width="284" height="330" rx="14" fill="#ffffff" stroke="#cfcabd" stroke-width="2"/>
+      <text x="22" y="44" font-size="21" font-weight="600">M2 · Parity</text>
+      <text x="22" y="76" fill="#6b6b6b">about 4 weeks</text>
+      <line x1="22" y1="96" x2="262" y2="96" stroke="#e2ded4" stroke-width="2"/>
+      <text x="22" y="136">Inbox tools, search</text>
+      <text x="22" y="168">Reminders, send later</text>
+      <text x="22" y="200">Cookie logins, push</text>
+      <text x="22" y="232">Linux desktop app,</text>
+      <text x="22" y="264">then macOS and Android</text>
+      <text x="22" y="296">All default networks</text>
+    </g>
+    <g transform="translate(1018 120)">
+      <rect width="284" height="330" rx="14" fill="#ffffff" stroke="#cfcabd" stroke-width="2"/>
+      <text x="22" y="44" font-size="21" font-weight="600">M3 · Extras</text>
+      <text x="22" y="76" fill="#6b6b6b">ongoing</text>
+      <line x1="22" y1="96" x2="262" y2="96" stroke="#e2ded4" stroke-width="2"/>
+      <text x="22" y="136">Merged chats</text>
+      <text x="22" y="168">iMessage, Discord v2</text>
+      <text x="22" y="200">Transcription, MCP</text>
+      <text x="22" y="232">Block users</text>
+      <text x="22" y="264">Storage jobs</text>
+    </g>
+  </g>
+
+  <line x1="42" y1="492" x2="1288" y2="492" stroke="#cfcabd" stroke-width="2"/>
+  <path d="M1286 484 L1300 492 L1286 500 Z" fill="#cfcabd"/>
+  <g stroke-width="2">
+    <path d="M347 474 L365 492 L347 510 L329 492 Z" fill="#ffffff" stroke="#cfcabd"/>
+    <path d="M672 474 L690 492 L672 510 L654 492 Z" fill="#ffffff" stroke="#cfcabd"/>
+    <path d="M997 472 L1017 492 L997 512 L977 492 Z" fill="#bcd3f2" stroke="#2f6fd0" stroke-width="3"/>
+  </g>
+  <g font-size="18" text-anchor="middle">
+    <text x="347" y="544" font-weight="600" fill="#1a1a1a">Gate: backend</text>
+    <text x="347" y="572" fill="#6b6b6b">passes sb test</text>
+    <text x="672" y="544" font-weight="600" fill="#1a1a1a">Gate: Beeper off</text>
+    <text x="672" y="572" fill="#6b6b6b">the iPhone</text>
+    <text x="997" y="544" font-weight="600" fill="#1a1a1a">Gate: Beeper off</text>
+    <text x="997" y="572" fill="#6b6b6b">every device</text>
+  </g>
+</svg>
