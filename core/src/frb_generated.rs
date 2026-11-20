@@ -4800,6 +4800,7 @@ impl SseDecode for crate::api::types::Preview {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_senderName = <Option<String>>::sse_decode(deserializer);
+        let mut var_senderAvatarMxc = <Option<String>>::sse_decode(deserializer);
         let mut var_isOwn = <bool>::sse_decode(deserializer);
         let mut var_text = <String>::sse_decode(deserializer);
         let mut var_sending = <bool>::sse_decode(deserializer);
@@ -4807,6 +4808,7 @@ impl SseDecode for crate::api::types::Preview {
         let mut var_isMembership = <bool>::sse_decode(deserializer);
         return crate::api::types::Preview {
             sender_name: var_senderName,
+            sender_avatar_mxc: var_senderAvatarMxc,
             is_own: var_isOwn,
             text: var_text,
             sending: var_sending,
@@ -6102,6 +6104,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::types::Preview {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.sender_name.into_into_dart().into_dart(),
+            self.sender_avatar_mxc.into_into_dart().into_dart(),
             self.is_own.into_into_dart().into_dart(),
             self.text.into_into_dart().into_dart(),
             self.sending.into_into_dart().into_dart(),
@@ -7230,6 +7233,7 @@ impl SseEncode for crate::api::types::Preview {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <Option<String>>::sse_encode(self.sender_name, serializer);
+        <Option<String>>::sse_encode(self.sender_avatar_mxc, serializer);
         <bool>::sse_encode(self.is_own, serializer);
         <String>::sse_encode(self.text, serializer);
         <bool>::sse_encode(self.sending, serializer);

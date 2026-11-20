@@ -17,7 +17,8 @@ enum SharedSession {
     return prefix + "com.richarddraycott.switchboard.shared"
   }
 
-  private static func query() -> [CFString: Any] {
+  /// The shared group's item for `account`.
+  fileprivate static func query(_ account: String) -> [CFString: Any] {
     var q: [CFString: Any] = [
       kSecClass: kSecClassGenericPassword,
       kSecAttrService: service,
@@ -29,9 +30,9 @@ enum SharedSession {
 
   /// Stores the session JSON, or removes it when nil.
   static func store(_ json: String?) {
-    SecItemDelete(query() as CFDictionary)
+    SecItemDelete(query(account) as CFDictionary)
     guard let json, let data = json.data(using: .utf8) else { return }
-    var add = query()
+    var add = query(account)
     add[kSecValueData] = data
     // The extension runs while the phone is locked.
     add[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
@@ -39,7 +40,7 @@ enum SharedSession {
   }
 
   static func load() -> (homeserver: String, token: String, userId: String)? {
-    var q = query()
+    var q = query(account)
     q[kSecReturnData] = true
     q[kSecMatchLimit] = kSecMatchLimitOne
     var item: CFTypeRef?
@@ -52,5 +53,32 @@ enum SharedSession {
       let userId = session["user_id"] as? String
     else { return nil }
     return (homeserver, token, userId)
+  }
+}
+
+/// Whether notifications hide who sent a message: the app's setting, where
+/// the extension can read it. An item in the shared keychain group that
+/// exists while senders are hidden.
+enum NotificationPrivacy {
+  private static let account = "hide_sender"
+
+  /// False only when the keychain says there is no such item. While it
+  /// can't be read (before the first unlock, say) senders stay hidden.
+  static var hidesSender: Bool {
+    var q = SharedSession.query(account)
+    q[kSecMatchLimit] = kSecMatchLimitOne
+    return SecItemCopyMatching(q as CFDictionary, nil) != errSecItemNotFound
+  }
+
+  /// Returns whether the keychain took the change.
+  @discardableResult
+  static func store(_ hide: Bool) -> Bool {
+    let removed = SecItemDelete(SharedSession.query(account) as CFDictionary)
+    guard hide else { return removed == errSecSuccess || removed == errSecItemNotFound }
+    var add = SharedSession.query(account)
+    add[kSecValueData] = Data([1])
+    // The extension runs while the phone is locked.
+    add[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+    return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
   }
 }

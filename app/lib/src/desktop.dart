@@ -2,6 +2,7 @@
 // sync keeps running, the icon shows how many chats are unread, new messages
 // raise desktop notifications, and the app can start at login in the tray.
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -16,6 +17,8 @@ import 'package:window_manager/window_manager.dart';
 
 import 'rust/api/types.dart';
 import 'state/calls.dart';
+import 'state/media.dart';
+import 'state/notification_privacy.dart';
 import 'state/notify.dart';
 import 'state/ringer.dart';
 import 'state/rooms.dart';
@@ -25,6 +28,14 @@ import 'ui/router.dart';
 
 const _appId = 'com.richarddraycott.switchboard';
 const _trayIcon = 'assets/icon/tray.png';
+
+/// The app's own icon, as notifications show it: the picture of every
+/// notification that has no sender's picture to show. It ships in the
+/// bundle, so it doesn't depend on an installed icon theme.
+const notificationIcon = 'assets/icon/switchboard-256.png';
+
+/// The size senders' pictures are fetched at, in pixels.
+const _pictureSize = 96;
 
 /// The ringing call's notification. Chats' IDs come from room ID hashes.
 const _callNotificationId = 0x7ffffffe;
@@ -89,6 +100,106 @@ Future<Uint8List> _drawTrayBadge(String label) async {
   return png!.buffer.asUint8List();
 }
 
+/// Chats' notifications: raised as unread counts rise and taken down as
+/// chats are read. Each shows its sender's picture, or the app's icon when
+/// they have none, it can't be fetched, or senders are hidden.
+class ChatNotifications {
+  ChatNotifications(this._plugin, {required this.hideSender, required this.picture});
+
+  final LinuxFlutterLocalNotificationsPlugin _plugin;
+
+  /// The setting, asked for each notification, so changing it applies to
+  /// the next one.
+  final Future<bool> Function() hideSender;
+
+  /// A picture's PNG bytes, from its mxc:// URI.
+  final Future<Uint8List> Function(String mxc) picture;
+
+  /// Each chat's unread count at the last update. Null until the first
+  /// list after signing in, which only sets the baseline.
+  Map<String, int>? _counts;
+
+  /// Chats with a notification showing or on its way, each with a number
+  /// that rises with every message, so that a notification held up by its
+  /// picture never replaces a newer one or returns after the chat is read.
+  final _shown = <String, int>{};
+  var _raised = 0;
+
+  /// The inbox changed. [openRoomId] is the chat on screen, which doesn't
+  /// notify. Null [rooms] means signed out.
+  void update(List<RoomSummary>? rooms, {String? openRoomId}) {
+    if (rooms == null) {
+      _counts = null;
+      return;
+    }
+    final before = _counts;
+    _counts = {for (final r in rooms) r.id: r.unreadCount};
+    if (before == null) return;
+    // Read elsewhere: take its notification down.
+    for (final r in rooms) {
+      if (r.unreadCount == 0 && _shown.remove(r.id) != null) _plugin.cancel(id: notificationId(r.id)).ignore();
+    }
+    final fresh = newlyNotifying(before, rooms, openRoomId: openRoomId);
+    if (fresh.isEmpty) return;
+    // A burst, such as catching up after a reconnect, gets one summary.
+    if (fresh.length > 3) {
+      _plugin
+          .show(
+            id: 0,
+            title: 'Switchboard',
+            body: '${fresh.length} chats have new messages',
+            notificationDetails: LinuxNotificationDetails(icon: AssetsLinuxIcon(notificationIcon)),
+          )
+          .ignore();
+      return;
+    }
+    for (final r in fresh) {
+      _show(r).ignore();
+    }
+  }
+
+  Future<void> _show(RoomSummary r) async {
+    final raised = _shown[r.id] = ++_raised;
+    // Without the setting, assume the careful answer.
+    final hide = await hideSender().catchError((_) => true);
+    final text = notificationText(r, hideSender: hide);
+    final icon = await _picture(hide ? null : senderPicture(r));
+    if (_shown[r.id] != raised) return;
+    await _plugin.show(
+      id: notificationId(r.id),
+      title: text.title,
+      body: text.body,
+      payload: r.id,
+      notificationDetails: LinuxNotificationDetails(icon: icon),
+    );
+  }
+
+  /// The picture at [mxc] for the notification server, which takes raw
+  /// pixels, or the app's icon.
+  Future<LinuxNotificationIcon> _picture(String? mxc) async {
+    if (mxc != null) {
+      try {
+        final png = await picture(mxc).timeout(const Duration(seconds: 4));
+        final codec = await ui.instantiateImageCodec(png);
+        final image = (await codec.getNextFrame()).image;
+        final pixels = await image.toByteData(format: ui.ImageByteFormat.rawStraightRgba);
+        if (pixels != null) {
+          return ByteDataLinuxIcon(LinuxRawIconData(
+            data: pixels.buffer.asUint8List(),
+            width: image.width,
+            height: image.height,
+            channels: 4,
+            hasAlpha: true,
+          ));
+        }
+      } catch (_) {
+        // No picture: the app's icon.
+      }
+    }
+    return AssetsLinuxIcon(notificationIcon);
+  }
+}
+
 /// The tray icon and menu, close-to-tray, and notifications.
 class DesktopIntegration extends ConsumerStatefulWidget {
   const DesktopIntegration({super.key, required this.child});
@@ -100,14 +211,12 @@ class DesktopIntegration extends ConsumerStatefulWidget {
 
 class _DesktopIntegrationState extends ConsumerState<DesktopIntegration> with TrayListener, WindowListener {
   final _notifications = LinuxFlutterLocalNotificationsPlugin();
+  late final _chats = ChatNotifications(
+    _notifications,
+    hideSender: () => ref.read(hideNotificationSenderProvider.future),
+    picture: (mxc) => ref.read(avatarProvider((mxc: mxc, size: _pictureSize)).future),
+  );
   final _ringer = Ringer();
-
-  /// Each chat's unread count at the last update. Null until the first
-  /// list after signing in, which only sets the baseline.
-  Map<String, int>? _counts;
-
-  /// Chats with a notification showing.
-  final _shown = <String>{};
   bool _focused = false;
 
   @override
@@ -144,7 +253,7 @@ class _DesktopIntegrationState extends ConsumerState<DesktopIntegration> with Tr
   Future<void> _setUpNotifications() async {
     try {
       await _notifications.initialize(
-        settings: LinuxInitializationSettings(defaultActionName: 'Open', defaultIcon: AssetsLinuxIcon(_trayIcon)),
+        settings: LinuxInitializationSettings(defaultActionName: 'Open', defaultIcon: AssetsLinuxIcon(notificationIcon)),
         onDidReceiveNotificationResponse: (response) {
           switch (response.actionId) {
             case 'answer':
@@ -211,32 +320,6 @@ class _DesktopIntegrationState extends ConsumerState<DesktopIntegration> with Tr
     return s.length >= 2 && s[0] == 'room' ? s[1] : null;
   }
 
-  void _onRooms(List<RoomSummary>? rooms) {
-    if (rooms == null) {
-      _counts = null;
-      return;
-    }
-    final before = _counts;
-    _counts = {for (final r in rooms) r.id: r.unreadCount};
-    if (before == null) return;
-    // Read elsewhere: take its notification down.
-    for (final r in rooms) {
-      if (r.unreadCount == 0 && _shown.remove(r.id)) _notifications.cancel(id: notificationId(r.id));
-    }
-    final fresh = newlyNotifying(before, rooms, openRoomId: _openRoomId());
-    if (fresh.isEmpty) return;
-    // A burst, such as catching up after a reconnect, gets one summary.
-    if (fresh.length > 3) {
-      _notifications.show(id: 0, title: 'Switchboard', body: '${fresh.length} chats have new messages');
-      return;
-    }
-    for (final r in fresh) {
-      final text = notificationText(r);
-      _shown.add(r.id);
-      _notifications.show(id: notificationId(r.id), title: text.title, body: text.body, payload: r.id);
-    }
-  }
-
   /// Rings while a call rings, with a notification to answer it from when
   /// the window isn't in front. The call panel covers the window itself.
   void _onCall(CallView? before, CallView? call) {
@@ -270,7 +353,7 @@ class _DesktopIntegrationState extends ConsumerState<DesktopIntegration> with Tr
   @override
   Widget build(BuildContext context) {
     ref.listen(unreadCountProvider, (_, count) => _setTrayIcon(count));
-    ref.listen(_signedInInboxProvider, (_, rooms) => _onRooms(rooms));
+    ref.listen(_signedInInboxProvider, (_, rooms) => _chats.update(rooms, openRoomId: _openRoomId()));
     ref.listen<CallView?>(callProvider, _onCall);
     return widget.child;
   }

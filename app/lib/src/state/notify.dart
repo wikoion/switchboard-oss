@@ -1,4 +1,4 @@
-// Which chats raise a desktop notification, and what it says. A chat's
+// Which chats raise a desktop notification, and what it says and shows. A chat's
 // unread count follows your push rules, so it only rises for messages
 // they notify for; muted chats stay at zero.
 
@@ -27,13 +27,31 @@ List<RoomSummary> newlyNotifying(
   ];
 }
 
-/// "Alice · WhatsApp", or "Alice in Family · WhatsApp" for a group.
-({String title, String body}) notificationText(RoomSummary r) {
+/// What stands in for the sender when notifications hide who wrote.
+const hiddenSender = 'New message';
+
+/// "Alice · WhatsApp", or "Alice in Family · WhatsApp" for a group. With
+/// [hideSender] it names nobody: neither the sender nor the chat, since a
+/// direct chat is named after the other person.
+({String title, String body}) notificationText(RoomSummary r, {bool hideSender = false}) {
   final p = r.preview;
+  final network = r.network == null ? '' : ' · ${r.network!.name}';
+  if (hideSender) {
+    // A join or leave is worded around the member's name.
+    final text = p == null || p.isMembership ? 'New message' : p.text;
+    return (title: '$hiddenSender$network', body: text);
+  }
   final sender = p?.senderName;
   final who = r.isDm || sender == null ? r.name : '$sender in ${r.name}';
-  final network = r.network == null ? '' : ' · ${r.network!.name}';
   return (title: '$who$network', body: p?.text ?? 'New message');
+}
+
+/// The sender's picture for a chat's notification: their own, or in a
+/// direct chat the chat's, which is the other person's. Null when they
+/// have none; a group's picture isn't the sender's.
+String? senderPicture(RoomSummary r) {
+  final mxc = r.preview?.senderAvatarMxc ?? (r.isDm ? r.avatarMxc : null);
+  return mxc != null && mxc.startsWith('mxc://') ? mxc : null;
 }
 
 /// A stable notification ID per chat, so a newer message replaces the

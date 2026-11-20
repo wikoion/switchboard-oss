@@ -128,6 +128,22 @@ flutter_rust_bridge_codegen generate    # after changing core/src/api
   macOS. For crashes on a phone, `xcrun devicectl device info files --device
   <id> --domain-type systemCrashLogs` lists `NotificationService-*.ips`, and
   `xcrun devicectl device copy from` fetches one.
+- A notification from a sender with a picture is a communication
+  notification, which is what has iOS draw the picture where the app's icon
+  would be. That takes the Communication Notifications capability
+  (`com.apple.developer.usernotifications.communication` in
+  `Runner.entitlements`; automatic signing adds it to the profile) and
+  `INSendMessageIntent` under `NSUserActivityTypes` in the app's
+  `Info.plist`. Without them iOS shows the same text with the app's icon,
+  which is also what a sender with no picture gets.
+- Settings › Hide sender in notifications is a file in the app's support
+  directory, so a fresh install starts with it off. The notification
+  extension can't read that, so the app keeps a copy in the keychain group
+  the two share (`setHideSender` on the `switchboard/push` channel), written
+  at each launch and each change. With it on, a notification says "New
+  message" in place of the sender and the chat and keeps the app's icon.
+  `SB_HIDE_SENDER=1 app/tool/test-notification-service.sh` renders a real
+  event that way.
 - `app/tool/install-iphone.sh` builds a release and installs it with roamrun,
   a separate tool the author uses to install over Tailscale. It is optional:
   `flutter run --release` or Xcode installs on a phone without it.
@@ -149,6 +165,13 @@ file in `app/linux/packaging`.
 
 - The build needs rustup's `stable` toolchain at 1.99.1 or later, because
   cargokit builds the core with `rustup run stable`.
+- Desktop notifications carry the sender's picture as raw pixels (the
+  notification spec's `image-data`), and otherwise the app's icon from the
+  bundle (`assets/icon/switchboard-256.png`): for a sender with no picture,
+  one that can't be fetched, and every notification while Settings › Hide
+  sender in notifications is on. `ChatNotifications` in
+  `app/lib/src/desktop.dart` decides; `app/test/chat_notifications_test.dart`
+  drives it with a stand-in for the notification server.
 - `app/tool/linux-shot.sh /accounts out.png 1280x800` opens a route in the
   debug build under Xvfb and takes a screenshot.
 - `app/tool/linux-web-login-test.sh` runs the real WebKitGTK sign-in window

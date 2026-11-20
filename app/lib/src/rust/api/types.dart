@@ -460,6 +460,9 @@ class Network {
 
 class Preview {
   final String? senderName;
+
+  /// The sender's own picture, for notifications.
+  final String? senderAvatarMxc;
   final bool isOwn;
   final String text;
   final bool sending;
@@ -471,6 +474,7 @@ class Preview {
 
   const Preview({
     this.senderName,
+    this.senderAvatarMxc,
     required this.isOwn,
     required this.text,
     required this.sending,
@@ -481,6 +485,7 @@ class Preview {
   @override
   int get hashCode =>
       senderName.hashCode ^
+      senderAvatarMxc.hashCode ^
       isOwn.hashCode ^
       text.hashCode ^
       sending.hashCode ^
@@ -493,6 +498,7 @@ class Preview {
       other is Preview &&
           runtimeType == other.runtimeType &&
           senderName == other.senderName &&
+          senderAvatarMxc == other.senderAvatarMxc &&
           isOwn == other.isOwn &&
           text == other.text &&
           sending == other.sending &&

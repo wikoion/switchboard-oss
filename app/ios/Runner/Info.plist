@@ -50,6 +50,10 @@
 		<string>audio</string>
 		<string>voip</string>
 	</array>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>INSendMessageIntent</string>
+	</array>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Switchboard saves the photos and videos you choose to your library.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
