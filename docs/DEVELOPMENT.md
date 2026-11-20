@@ -155,6 +155,10 @@ flutter_rust_bridge_codegen generate    # after changing core/src/api
   place of the sender and the chat and keeps the app's icon.
   `SB_HIDE_SENDER=1 app/tool/test-notification-service.sh` renders a real
   event that way.
+- `xcrun simctl push` doesn't run the notification extension. The Simulator
+  hands the payload straight to SpringBoard, which shows Sygnal's "New
+  message" as it came, `mutable-content` or not (iOS 18.6 and 26.3). What
+  the extension makes of a push shows only with one sent through APNs.
 - `app/tool/install-iphone.sh` builds a release and installs it with roamrun,
   a separate tool the author uses to install over Tailscale. It is optional:
   `flutter run --release` or Xcode installs on a phone without it.
