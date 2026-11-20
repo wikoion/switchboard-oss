@@ -135,7 +135,11 @@ flutter_rust_bridge_codegen generate    # after changing core/src/api
   `Runner.entitlements`; automatic signing adds it to the profile) and
   `INSendMessageIntent` under `NSUserActivityTypes` in the app's
   `Info.plist`. Without them iOS shows the same text with the app's icon,
-  which is also what a sender with no picture gets.
+  which is also what a sender with no picture gets. iOS words a
+  communication notification itself, from the intent and not from the title
+  and subtitle: the sender's name, with the intent's group name under it
+  when the intent has more than one recipient. That line carries the group
+  and the network ("Mum" over "Family · Signal", "Alice" over "WhatsApp").
 - Settings › Hide sender in notifications is a file in the app's support
   directory, so a fresh install starts with it off. The notification
   extension can't read that, so the app keeps a copy in the keychain group

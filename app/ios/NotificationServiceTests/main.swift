@@ -103,18 +103,34 @@ check(!Client.isImage(Data()), "nothing isn't an image")
 let alice = NotificationService.Sender(
   id: "@whatsapp_447700900123:switchboard.internal", name: "Alice", group: nil, network: "WhatsApp",
   pictureMxc: "mxc://example.org/alice")
-let fromAlice = NotificationService.message("See you at 7", roomId: "!dm:switchboard.internal", from: alice, picture: png)
+let me = "@alex:switchboard.internal"
+let fromAlice = NotificationService.message(
+  "See you at 7", roomId: "!dm:switchboard.internal", from: alice, me: me, picture: png)
 expect(fromAlice.sender?.displayName ?? "-", "Alice", "message's sender")
 check(fromAlice.sender?.image != nil, "message's sender has their picture")
 expect(fromAlice.conversationIdentifier ?? "-", "!dm:switchboard.internal", "message's chat")
 expect(fromAlice.content ?? "-", "See you at 7", "message's text")
-check(fromAlice.speakableGroupName == nil, "a DM has no group")
+// iOS shows the line under the sender only when there are several recipients.
+expect(fromAlice.speakableGroupName?.spokenPhrase ?? "-", "WhatsApp", "a DM's line is the network")
+check(fromAlice.recipients?.count == 2, "a DM has two recipients, so that iOS shows the line")
+check(fromAlice.recipients?.contains { $0.isMe } == true, "the recipients include me")
 var mum = alice
 mum.name = "Mum"
 mum.group = "Family"
-let fromMum = NotificationService.message("Photo", roomId: "!family:switchboard.internal", from: mum, picture: png)
-expect(fromMum.speakableGroupName?.spokenPhrase ?? "-", "Family", "message's group")
+let fromMum = NotificationService.message(
+  "Photo", roomId: "!family:switchboard.internal", from: mum, me: me, picture: png)
+expect(fromMum.sender?.displayName ?? "-", "Mum", "a group message's sender")
+expect(fromMum.speakableGroupName?.spokenPhrase ?? "-", "Family · WhatsApp", "a group message's line")
+check(fromMum.recipients?.count == 2, "a group message has two recipients")
 check(fromMum.sender?.image != nil, "a group message's sender has their picture")
+var native = alice
+native.network = nil
+let fromNative = NotificationService.message(
+  "Hi", roomId: "!dm:switchboard.internal", from: native, me: me, picture: png)
+check(fromNative.speakableGroupName == nil, "no group and no network: no line")
+check(fromNative.recipients == nil, "no group and no network: a plain direct message")
+native.group = "Family"
+expect(NotificationService.placeLine(of: native) ?? "-", "Family", "a group with no network")
 
 let env = ProcessInfo.processInfo.environment
 if let token = env["SB_TOKEN"], let room = env["SB_ROOM"], let event = env["SB_EVENT"] {

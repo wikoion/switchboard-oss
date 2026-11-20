@@ -50,7 +50,8 @@ class NotificationService: UNNotificationServiceExtension {
       // The text is in place, so the deadline delivers it should the
       // picture be slow.
       if let sender = shown?.sender, let picture = await client.picture(sender.pictureMxc),
-        let fromSender = Self.communication(content, roomId: roomId, from: sender, picture: picture)
+        let fromSender = Self.communication(
+          content, roomId: roomId, from: sender, me: session.userId, picture: picture)
       {
         self.content = fromSender
       }
@@ -161,9 +162,9 @@ class NotificationService: UNNotificationServiceExtension {
   /// their picture in place of the app's icon. Nil when iOS won't have it:
   /// the notification then stays as it is, with the app's icon.
   static func communication(
-    _ content: UNNotificationContent, roomId: String, from sender: Sender, picture: Data
+    _ content: UNNotificationContent, roomId: String, from sender: Sender, me: String, picture: Data
   ) -> UNNotificationContent? {
-    let intent = message(content.body, roomId: roomId, from: sender, picture: picture)
+    let intent = message(content.body, roomId: roomId, from: sender, me: me, picture: picture)
     let interaction = INInteraction(intent: intent, response: nil)
     interaction.direction = .incoming
     interaction.donate(completion: nil)
@@ -171,21 +172,42 @@ class NotificationService: UNNotificationServiceExtension {
   }
 
   /// An incoming message as the system's intent for one.
-  static func message(_ body: String, roomId: String, from sender: Sender, picture: Data) -> INSendMessageIntent {
+  ///
+  /// iOS words such a notification itself, from the intent and not from the
+  /// title and subtitle: the sender's name, and under it the name of the
+  /// group, which it shows only for a message with more than one recipient.
+  /// So that line is given what the plain notification says besides the
+  /// sender, the group and the network ("Family · Signal", or "WhatsApp" in
+  /// a direct chat), and the recipients are the sender and `me`.
+  static func message(
+    _ body: String, roomId: String, from sender: Sender, me: String, picture: Data
+  ) -> INSendMessageIntent {
     let image = INImage(imageData: picture)
     let person = INPerson(
       personHandle: INPersonHandle(value: sender.id, type: .unknown), nameComponents: nil,
       displayName: sender.name, image: image, contactIdentifier: nil, customIdentifier: sender.id)
+    let myself = INPerson(
+      personHandle: INPersonHandle(value: me, type: .unknown), nameComponents: nil,
+      displayName: nil, image: nil, contactIdentifier: nil, customIdentifier: me, isMe: true)
+    let place = placeLine(of: sender)
     let intent = INSendMessageIntent(
-      recipients: nil, outgoingMessageType: .outgoingMessageText, content: body,
-      speakableGroupName: sender.group.map { INSpeakableString(spokenPhrase: $0) },
+      recipients: place == nil ? nil : [person, myself], outgoingMessageType: .outgoingMessageText, content: body,
+      speakableGroupName: place.map { INSpeakableString(spokenPhrase: $0) },
       conversationIdentifier: roomId, serviceName: sender.network, sender: person, attachments: nil)
-    // A group is drawn with its own picture, so it is given the sender's.
-    // (The Mac, where the tests run, has no such call.)
+    // A message with a group line is drawn with the group's picture, so
+    // that is given the sender's. (The Mac, where the tests run, has no
+    // such call.)
     #if os(iOS)
-      if sender.group != nil { intent.setImage(image, forParameterNamed: \.speakableGroupName) }
+      if place != nil { intent.setImage(image, forParameterNamed: \.speakableGroupName) }
     #endif
     return intent
+  }
+
+  /// The line under the sender's name: where they wrote. Nil when there is
+  /// neither a group nor a network to name.
+  static func placeLine(of sender: Sender) -> String? {
+    let place = [sender.group, sender.network].compactMap { $0 }.joined(separator: " · ")
+    return place.isEmpty ? nil : place
   }
 
   static func text(of event: [String: Any], senderName: String) -> String {
