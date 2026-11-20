@@ -11,6 +11,7 @@ import 'package:switchboard/src/state/notify.dart';
 
 const wa = Network(id: 'whatsapp', name: 'WhatsApp');
 const alicePicture = 'mxc://example.org/alice';
+const chatPicture = 'mxc://example.org/chat';
 const mumPicture = 'mxc://example.org/mum';
 const familyPicture = 'mxc://example.org/family';
 
@@ -57,8 +58,8 @@ RoomSummary room(
       unreadMessages: unread,
     );
 
-RoomSummary alice(int unread, {String text = 'See you at 7'}) =>
-    room('!alice', unread, text: text, picture: alicePicture);
+RoomSummary alice(int unread, {String text = 'See you at 7', String? senderPicture = alicePicture}) =>
+    room('!alice', unread, text: text, picture: chatPicture, senderPicture: senderPicture);
 
 RoomSummary family(int unread, {String? senderPicture = mumPicture}) => room(
       '!family',
@@ -175,6 +176,13 @@ void main() {
     expect(h.server.shown.single.title, 'Mum in Family · WhatsApp');
     expectStockIcon(h.server.shown.single);
     expect(h.fetched, isEmpty, reason: "the group's picture isn't the sender's");
+
+    // Nor is a direct chat's picture used in the sender's place.
+    final direct = Harness();
+    await direct.receive([alice(0, senderPicture: null)], [alice(1, senderPicture: null)]);
+    expect(direct.server.shown.single.title, 'Alice · WhatsApp');
+    expectStockIcon(direct.server.shown.single);
+    expect(direct.fetched, isEmpty);
   });
 
   test("a picture that can't be fetched or read gets the Switchboard icon", () async {

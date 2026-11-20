@@ -71,19 +71,15 @@ expect(
   NotificationService.compose(event: emote, senderName: "Alice", roomName: "Alice", network: nil, hideSender: true).body,
   "* Someone waves", "hidden emote")
 
-// The sender's picture: their own, or a direct chat's; never a group's.
-let ownPicture: [String: Any] = ["displayname": "Alice", "avatar_url": "mxc://example.org/alice"]
-let roomPicture: [String: Any] = ["url": "mxc://example.org/room"]
-func picture(_ member: [String: Any]?, _ room: [String: Any]?, group: Bool) -> String {
-  NotificationService.pictureMxc(member: member, roomAvatar: room, isGroup: group) ?? "-"
+// The sender's picture: their own, and never the chat's.
+func picture(_ member: [String: Any]?) -> String {
+  NotificationService.pictureMxc(member: member) ?? "-"
 }
-expect(picture(ownPicture, roomPicture, group: false), "mxc://example.org/alice", "own picture in a DM")
-expect(picture(ownPicture, roomPicture, group: true), "mxc://example.org/alice", "own picture in a group")
-expect(picture(["displayname": "Alice"], roomPicture, group: false), "mxc://example.org/room", "DM's picture")
-expect(picture(["displayname": "Alice"], roomPicture, group: true), "-", "a group's picture isn't the sender's")
-expect(picture(nil, nil, group: false), "-", "no picture")
-expect(picture(["avatar_url": "https://example.org/a.png"], nil, group: false), "-", "not an mxc URI")
-expect(picture(["avatar_url": ""], nil, group: false), "-", "empty picture")
+expect(picture(["displayname": "Alice", "avatar_url": "mxc://example.org/alice"]), "mxc://example.org/alice", "own picture")
+expect(picture(["displayname": "Alice"]), "-", "no picture of their own")
+expect(picture(nil), "-", "no membership")
+expect(picture(["avatar_url": "https://example.org/a.png"]), "-", "not an mxc URI")
+expect(picture(["avatar_url": ""]), "-", "empty picture")
 
 expect(Client.mediaPath("mxc://example.org/abc123") ?? "-", "example.org/abc123", "media path")
 expect(Client.mediaPath("mxc://localhost:8448/a b") ?? "-", "localhost%3A8448/a%20b", "media path escapes")
@@ -131,6 +127,32 @@ check(fromNative.speakableGroupName == nil, "no group and no network: no line")
 check(fromNative.recipients == nil, "no group and no network: a plain direct message")
 native.group = "Family"
 expect(NotificationService.placeLine(of: native) ?? "-", "Family", "a group with no network")
+
+// Storing the setting. Hiding senders never removes the keychain item, not
+// even to put it back: the extension reads it at any moment, and finding
+// none means senders are shown.
+var keychainCalls: [String] = []
+func keychain(add: OSStatus = errSecSuccess, delete: OSStatus = errSecSuccess) -> NotificationPrivacy.Keychain {
+  keychainCalls = []
+  return NotificationPrivacy.Keychain(
+    add: { item in
+      keychainCalls.append("add \(item[kSecAttrAccount] as? String ?? "-")")
+      return add
+    },
+    delete: { item in
+      keychainCalls.append("delete \(item[kSecAttrAccount] as? String ?? "-")")
+      return delete
+    })
+}
+check(NotificationPrivacy.store(true, in: keychain()), "hiding is stored")
+expect(keychainCalls.joined(separator: ", "), "add hide_sender", "hiding only adds the item")
+check(NotificationPrivacy.store(true, in: keychain(add: errSecDuplicateItem)), "hiding again, at the next launch, is stored")
+expect(keychainCalls.joined(separator: ", "), "add hide_sender", "hiding again leaves the item in place")
+check(!NotificationPrivacy.store(true, in: keychain(add: errSecInteractionNotAllowed)), "a refused add isn't stored")
+check(NotificationPrivacy.store(false, in: keychain()), "showing is stored")
+expect(keychainCalls.joined(separator: ", "), "delete hide_sender", "showing removes the item")
+check(NotificationPrivacy.store(false, in: keychain(delete: errSecItemNotFound)), "showing with nothing to remove is stored")
+check(!NotificationPrivacy.store(false, in: keychain(delete: errSecInteractionNotAllowed)), "a refused removal isn't stored")
 
 let env = ProcessInfo.processInfo.environment
 if let token = env["SB_TOKEN"], let room = env["SB_ROOM"], let event = env["SB_EVENT"] {

@@ -140,12 +140,19 @@ flutter_rust_bridge_codegen generate    # after changing core/src/api
   and subtitle: the sender's name, with the intent's group name under it
   when the intent has more than one recipient. That line carries the group
   and the network ("Mum" over "Family · Signal", "Alice" over "WhatsApp").
+  The picture is the one on the sender's own profile and never the chat's:
+  the extension can only guess whether a chat is direct, and a group's
+  picture isn't its sender's.
 - Settings › Hide sender in notifications is a file in the app's support
   directory, so a fresh install starts with it off. The notification
   extension can't read that, so the app keeps a copy in the keychain group
   the two share (`setHideSender` on the `switchboard/push` channel), written
-  at each launch and each change. With it on, a notification says "New
-  message" in place of the sender and the chat and keeps the app's icon.
+  at each launch and each change. The copy is a keychain item that exists
+  while senders are hidden. Hiding only adds it and leaves one that is
+  already there in place, so the write at launch never opens a moment in
+  which the extension finds none and names a sender; only turning the
+  setting off removes it. With it on, a notification says "New message" in
+  place of the sender and the chat and keeps the app's icon.
   `SB_HIDE_SENDER=1 app/tool/test-notification-service.sh` renders a real
   event that way.
 - `app/tool/install-iphone.sh` builds a release and installs it with roamrun,
@@ -170,7 +177,8 @@ file in `app/linux/packaging`.
 - The build needs rustup's `stable` toolchain at 1.99.1 or later, because
   cargokit builds the core with `rustup run stable`.
 - Desktop notifications carry the sender's picture as raw pixels (the
-  notification spec's `image-data`), and otherwise the app's icon from the
+  notification spec's `image-data`), their own and never the chat's, and
+  otherwise the app's icon from the
   bundle (`assets/icon/switchboard-256.png`): for a sender with no picture,
   one that can't be fetched, and every notification while Settings › Hide
   sender in notifications is on. `ChatNotifications` in

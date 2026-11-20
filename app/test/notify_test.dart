@@ -95,11 +95,11 @@ void main() {
     expect(notificationText(joined).body, 'Mum joined');
   });
 
-  test("the picture is the sender's own, or a direct chat's, never a group's", () {
+  test("the picture is the sender's own, never the chat's", () {
     const alice = 'mxc://example.org/alice';
     const chat = 'mxc://example.org/chat';
     expect(senderPicture(room('!a', 1, picture: chat, senderPicture: alice)), alice);
-    expect(senderPicture(room('!a', 1, picture: chat)), chat, reason: "a direct chat's picture is the other person's");
+    expect(senderPicture(room('!a', 1, picture: chat)), isNull, reason: "a direct chat's picture isn't used either");
     expect(senderPicture(room('!family', 1, dm: false, sender: 'Mum', picture: chat, senderPicture: alice)), alice);
     expect(senderPicture(room('!family', 1, dm: false, sender: 'Mum', picture: chat)), isNull);
     expect(senderPicture(room('!a', 1)), isNull);

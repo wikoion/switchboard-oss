@@ -115,17 +115,15 @@ class NotificationService: UNNotificationServiceExtension {
     // shows the push's own "New message".
     let member = Task { await client.get("rooms/\(roomId.escaped)/state/m.room.member/\(sender.escaped)") }
     let roomName = Task { await client.get("rooms/\(roomId.escaped)/state/m.room.name") }
-    let roomAvatar = Task { await client.get("rooms/\(roomId.escaped)/state/m.room.avatar") }
     let memberEvent = await member.value
     let nameEvent = await roomName.value
-    let avatarEvent = await roomAvatar.value
     let senderName = memberEvent?["displayname"] as? String ?? localpart(sender)
     let room = nameEvent?["name"] as? String
     let network = network(of: sender)
     var shown = compose(event: event, senderName: senderName, roomName: room, network: network)
     shown.ts = ts
     let group = isGroup(roomName: room, senderName: senderName) ? room : nil
-    if let picture = pictureMxc(member: memberEvent, roomAvatar: avatarEvent, isGroup: group != nil) {
+    if let picture = pictureMxc(member: memberEvent) {
       shown.sender = Sender(id: sender, name: senderName, group: group, network: network, pictureMxc: picture)
     }
     return shown
@@ -136,10 +134,11 @@ class NotificationService: UNNotificationServiceExtension {
     roomName != nil && roomName != senderName
   }
 
-  /// The sender's picture: their own, or in a direct chat the chat's, which
-  /// is the other person's. A group's picture isn't the sender's.
-  static func pictureMxc(member: [String: Any]?, roomAvatar: [String: Any]?, isGroup: Bool) -> String? {
-    let mxc = member?["avatar_url"] as? String ?? (isGroup ? nil : roomAvatar?["url"] as? String)
+  /// The sender's picture: the one on their own profile, from their
+  /// membership of the chat. Never the chat's picture: a group's isn't the
+  /// sender's, and a chat with no name that looks direct may be a group.
+  static func pictureMxc(member: [String: Any]?) -> String? {
+    let mxc = member?["avatar_url"] as? String
     return mxc?.hasPrefix("mxc://") == true ? mxc : nil
   }
 

@@ -70,15 +70,30 @@ enum NotificationPrivacy {
     return SecItemCopyMatching(q as CFDictionary, nil) != errSecItemNotFound
   }
 
+  /// The keychain calls the setting is stored with. A test stands in for
+  /// them to see which are made.
+  struct Keychain {
+    var add: ([CFString: Any]) -> OSStatus = { SecItemAdd($0 as CFDictionary, nil) }
+    var delete: ([CFString: Any]) -> OSStatus = { SecItemDelete($0 as CFDictionary) }
+  }
+
   /// Returns whether the keychain took the change.
+  ///
+  /// Hiding only ever adds the item, and one already there is left alone:
+  /// the app stores the setting at every launch, and were that to remove
+  /// the item first, a message arriving in between would find none and name
+  /// its sender. Only showing senders removes it.
   @discardableResult
-  static func store(_ hide: Bool) -> Bool {
-    let removed = SecItemDelete(SharedSession.query(account) as CFDictionary)
-    guard hide else { return removed == errSecSuccess || removed == errSecItemNotFound }
+  static func store(_ hide: Bool, in keychain: Keychain = Keychain()) -> Bool {
+    guard hide else {
+      let removed = keychain.delete(SharedSession.query(account))
+      return removed == errSecSuccess || removed == errSecItemNotFound
+    }
     var add = SharedSession.query(account)
     add[kSecValueData] = Data([1])
     // The extension runs while the phone is locked.
     add[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-    return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
+    let added = keychain.add(add)
+    return added == errSecSuccess || added == errSecDuplicateItem
   }
 }

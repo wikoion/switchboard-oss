@@ -46,11 +46,11 @@ const hiddenSender = 'New message';
   return (title: '$who$network', body: p?.text ?? 'New message');
 }
 
-/// The sender's picture for a chat's notification: their own, or in a
-/// direct chat the chat's, which is the other person's. Null when they
-/// have none; a group's picture isn't the sender's.
+/// The sender's picture for a chat's notification: the one on their own
+/// profile. Null when they have none; the chat's picture is never used in
+/// its place, since it need not be the sender's.
 String? senderPicture(RoomSummary r) {
-  final mxc = r.preview?.senderAvatarMxc ?? (r.isDm ? r.avatarMxc : null);
+  final mxc = r.preview?.senderAvatarMxc;
   return mxc != null && mxc.startsWith('mxc://') ? mxc : null;
 }
 
