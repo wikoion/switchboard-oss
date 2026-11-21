@@ -58,6 +58,9 @@ The screenshots show a demo server with made-up people and chats
 - Swipe, press-and-hold and multi-select actions on phones; right-click and
   keyboard shortcuts on the desktop.
 - Note to Self, plus a Notes view that gathers each network's own self-chat.
+- Discord and Slack bring in direct messages, plus the channels you choose
+  in Settings, per account and at any time. Turning a channel off keeps the
+  chat and its history.
 
 **Conversations**
 
@@ -111,8 +114,8 @@ so the app links them all the same way. `sb bridges` lists the catalogue in
 | Signal | mautrix-signal, patched in [`bridges/signal`](bridges/signal) | Working |
 | Matrix (other homeservers) | `sb-matrix`, Switchboard's own, in [`bridges/matrix`](bridges/matrix) | Working against a test server; not yet with a real recovery key |
 | Instagram | mautrix-meta (Instagram) | Untested: runs on the author's server; in-app login not yet tried end to end |
-| Slack | mautrix-slack | Untested: runs on the author's server; in-app login not yet tried end to end |
-| Discord | mautrix-discord (bridgev2 rewrite) | Untested: runs on the author's server; in-app login not yet tried end to end |
+| Slack | mautrix-slack, patched in [`bridges/slack`](bridges/slack) | Untested: runs on the author's server; in-app login not yet tried end to end |
+| Discord | mautrix-discord (bridgev2 rewrite), patched in [`bridges/discord`](bridges/discord) | Untested: runs on the author's server; in-app login not yet tried end to end |
 | Telegram | mautrix-telegram | Untested: needs your own API ID from my.telegram.org |
 | Messenger | mautrix-meta | Untested |
 | X | mautrix-twitter | Untested |
@@ -300,6 +303,7 @@ while. More on tests, tooling and the code in
 | [`sb/`](sb) | Go: the `sb` CLI (`cmd/sb`) and the Hub (`cmd/hub`) |
 | [`deploy/`](deploy) | The Compose project: bridge catalogue, pinned versions, config overlays and templates |
 | [`bridges/signal/`](bridges/signal) | mautrix-signal at a pinned tag, with Switchboard's patches |
+| [`bridges/discord/`](bridges/discord), [`bridges/slack/`](bridges/slack) | mautrix-discord and mautrix-slack, pinned, with the per-channel bridging the app's Settings use |
 | [`bridges/matrix/`](bridges/matrix) | `sb-matrix`, a bridgev2 connector for accounts on other Matrix servers |
 | [`core/`](core) | `switchboard_core`, the Rust core over matrix-rust-sdk |
 | [`app/`](app) | The Flutter app for iOS and Linux |
@@ -347,6 +351,8 @@ text is in [LICENSE](LICENSE).
 The app links Signal's RingRTC and libsignal (AGPL-3.0-only), and the Signal
 bridge in `bridges/signal` patches mautrix-signal (AGPL-3.0-or-later), so
 builds that include them are covered by version 3 of the AGPL as a whole.
+`bridges/discord` and `bridges/slack` patch mautrix-discord and mautrix-slack
+(both AGPL-3.0-or-later) the same way.
 Third-party code, assets and the container images the backend runs are listed
 in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 

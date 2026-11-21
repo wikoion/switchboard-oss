@@ -37,7 +37,8 @@ class NotificationsScreen extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
             child: Text(
-              'Notifications show the sender and message, fetched from your server over Tailscale. '
+              'Notifications show the sender, their picture and the message, fetched from your server over Tailscale. '
+              'Settings can hide who sent them. '
               'Apple only carries an ID, never the text. If Tailscale is off when one arrives, it says "New message". '
               "The history a bridge imports when you link a network doesn't notify.",
               style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),

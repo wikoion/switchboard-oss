@@ -40,11 +40,14 @@ linkedin:
   image: dock.mau.dev/mautrix/linkedin
   tag: LINKEDIN_TAG
   kind: bridgev2
+# Built from bridges/slack: upstream at a pinned tag plus the per-channel
+# bridging the app's Settings need.
 slack:
   network: Slack
-  image: dock.mau.dev/mautrix/slack
+  image: switchboard/mautrix-slack
   tag: SLACK_TAG
   kind: bridgev2
+  build: ../bridges/slack
 gmessages:
   network: Google Messages
   image: dock.mau.dev/mautrix/gmessages
@@ -60,13 +63,15 @@ gvoice:
   image: dock.mau.dev/mautrix/gvoice
   tag: GVOICE_TAG
   kind: bridgev2
-# The bridgev2 rewrite (branch megadiscord), pinned by digest in
-# versions.env until it gets monthly tags like the others.
+# Built from bridges/discord: the bridgev2 rewrite (branch megadiscord) at a
+# pinned commit, until it gets monthly tags like the others, plus the
+# per-channel bridging the app's Settings need.
 discord:
   network: Discord
-  image: dock.mau.dev/mautrix/discord
+  image: switchboard/mautrix-discord
   tag: DISCORD_TAG
   kind: bridgev2
+  build: ../bridges/discord
 # Outside Matrix accounts (matrix.org and others). This server can't
 # federate, so this bridge, built from bridges/matrix, is how it reaches
 # the Matrix network.

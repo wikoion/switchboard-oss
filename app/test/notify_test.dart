@@ -7,10 +7,18 @@ const wa = Network(id: 'whatsapp', name: 'WhatsApp');
 final now = DateTime(2026, 11, 1, 12);
 
 RoomSummary room(String id, int unread,
-        {bool dm = true, String? sender, bool own = false, String text = 'hi', Duration ago = Duration.zero}) =>
+        {bool dm = true,
+        String? sender,
+        bool own = false,
+        String text = 'hi',
+        Duration ago = Duration.zero,
+        String? picture,
+        String? senderPicture,
+        bool membership = false}) =>
     RoomSummary(
       id: id,
       name: id == '!family' ? 'Family' : 'Alice',
+      avatarMxc: picture,
       network: wa,
       isDm: dm,
       dmUserIds: const [],
@@ -20,7 +28,15 @@ RoomSummary room(String id, int unread,
       isFavourite: false,
       isLowPriority: false,
       isMarkedUnread: false,
-      preview: Preview(senderName: sender, isOwn: own, text: text, sending: false, failed: false, isMembership: false),
+      preview: Preview(
+        senderName: sender,
+        senderAvatarMxc: senderPicture,
+        isOwn: own,
+        text: text,
+        sending: false,
+        failed: false,
+        isMembership: membership,
+      ),
       timestampMs: now.subtract(ago).millisecondsSinceEpoch,
       unreadCount: unread,
       mentionCount: 0,
@@ -64,6 +80,30 @@ void main() {
       notificationText(room('!family', 1, dm: false, sender: 'Mum', text: 'Photo')),
       (title: 'Mum in Family · WhatsApp', body: 'Photo'),
     );
+  });
+
+  test('hiding the sender names neither them nor the chat', () {
+    expect(
+      notificationText(room('!a', 1, text: 'See you at 7'), hideSender: true),
+      (title: 'New message · WhatsApp', body: 'See you at 7'),
+    );
+    final group = notificationText(room('!family', 1, dm: false, sender: 'Mum', text: 'Photo'), hideSender: true);
+    expect(group, (title: 'New message · WhatsApp', body: 'Photo'));
+    // A join is worded around the member's name.
+    final joined = room('!family', 1, dm: false, sender: 'Mum', text: 'Mum joined', membership: true);
+    expect(notificationText(joined, hideSender: true), (title: 'New message · WhatsApp', body: 'New message'));
+    expect(notificationText(joined).body, 'Mum joined');
+  });
+
+  test("the picture is the sender's own, never the chat's", () {
+    const alice = 'mxc://example.org/alice';
+    const chat = 'mxc://example.org/chat';
+    expect(senderPicture(room('!a', 1, picture: chat, senderPicture: alice)), alice);
+    expect(senderPicture(room('!a', 1, picture: chat)), isNull, reason: "a direct chat's picture isn't used either");
+    expect(senderPicture(room('!family', 1, dm: false, sender: 'Mum', picture: chat, senderPicture: alice)), alice);
+    expect(senderPicture(room('!family', 1, dm: false, sender: 'Mum', picture: chat)), isNull);
+    expect(senderPicture(room('!a', 1)), isNull);
+    expect(senderPicture(room('!a', 1, senderPicture: 'https://example.org/a.png')), isNull);
   });
 
   test('notification IDs are stable per chat and never 0', () {

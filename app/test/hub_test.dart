@@ -95,6 +95,91 @@ void main() {
       );
     });
 
+    test('lists channels by server or workspace with the saved selection', () async {
+      // As bridges/discord answers GET switchboard/v1/channels.
+      replies['/bridges/discord/provision/switchboard/v1/channels?login_id=301+122'] = HubResponse(
+        status: 200,
+        body: jsonEncode({
+          'groups': [
+            {
+              'id': 'g-atlas',
+              'name': 'Atlas',
+              'channels': [
+                {'id': 'c1', 'name': 'general', 'selected': false},
+              ],
+            },
+            {
+              'id': 'g-harbour',
+              'name': 'Harbour',
+              'channels': [
+                {'id': 'c2', 'name': 'general', 'selected': true},
+                {'id': 'c3', 'name': 'build', 'section': 'Projects', 'selected': false},
+              ],
+            },
+          ],
+        }),
+      );
+      final groups = await hub.channels('discord', '301 122');
+      expect(groups.map((g) => g.name), ['Atlas', 'Harbour']);
+      expect(groups[1].channels.map((c) => (c.id, c.name, c.section, c.selected)), [
+        ('c2', 'general', null, true),
+        ('c3', 'build', 'Projects', false),
+      ]);
+      expect(calls.single.$1, 'GET');
+
+      // As bridges/slack answers it: private channels are marked.
+      replies['/bridges/slack/provision/switchboard/v1/channels?login_id=T1-U1'] = HubResponse(
+        status: 200,
+        body: '{"groups":[{"id":"T1","name":"Northwind","channels":'
+            '[{"id":"C3","name":"leadership","private":true,"selected":true}]}]}',
+      );
+      final slack = await hub.channels('slack', 'T1-U1');
+      expect(slack.single.channels.single.private, isTrue);
+      expect(groups[0].channels.single.private, isFalse);
+    });
+
+    test('selecting puts and deselecting deletes the channel, returning what was saved', () async {
+      const path = '/bridges/slack/provision/switchboard/v1/channels/T1/C%2F1?login_id=T1-U1';
+      replies[path] = const HubResponse(status: 200, body: '{"group_id":"T1","id":"C/1","selected":true}');
+      expect(await hub.setChannelBridged('slack', 'T1-U1', 'T1', 'C/1', bridged: true), isTrue);
+      expect(calls.last, ('PUT', path, null));
+
+      replies[path] = const HubResponse(status: 200, body: '{"group_id":"T1","id":"C/1","selected":false}');
+      expect(await hub.setChannelBridged('slack', 'T1-U1', 'T1', 'C/1', bridged: false), isFalse);
+      expect(calls.last, ('DELETE', path, null));
+    });
+
+    test('a channel change the bridge refuses or does not confirm is an error', () async {
+      const path = '/bridges/slack/provision/switchboard/v1/channels/T1/C1?login_id=T1-U1';
+      replies[path] = const HubResponse(
+        status: 409,
+        body: '{"errcode":"SWITCHBOARD_EVERY_CHANNEL_BRIDGED","error":"This bridge is set to bridge every channel"}',
+      );
+      await expectLater(
+        hub.setChannelBridged('slack', 'T1-U1', 'T1', 'C1', bridged: false),
+        throwsA(isA<HubException>()
+            .having((e) => e.status, 'status', 409)
+            .having((e) => e.code, 'code', 'SWITCHBOARD_EVERY_CHANNEL_BRIDGED')),
+      );
+      replies[path] = const HubResponse(status: 200, body: '');
+      await expectLater(
+        hub.setChannelBridged('slack', 'T1-U1', 'T1', 'C1', bridged: true),
+        throwsA(isA<HubException>().having((e) => e.message, 'message', contains("didn't confirm"))),
+      );
+    });
+
+    test('only Discord and Slack bridges have channels to choose', () {
+      Bridge b(String id, {String? type, bool api = true}) =>
+          Bridge(id: id, network: id, reachable: true, supportsApi: api, networkId: type);
+      expect(b('discord', type: 'discordgo').hasChannels, isTrue);
+      expect(b('slack', type: 'slackgo').hasChannels, isTrue);
+      expect(b('work-chat', type: 'slack').hasChannels, isTrue);
+      expect(b('discord').hasChannels, isTrue);
+      expect(b('discord', api: false).hasChannels, isFalse, reason: 'a legacy bot bridge has no API to ask');
+      expect(b('whatsapp', type: 'whatsapp').hasChannels, isFalse);
+      expect(b('signal').hasChannels, isFalse);
+    });
+
     test('parses user_input fields', () {
       final step = LoginStep.fromJson({
         'login_id': 'L2',

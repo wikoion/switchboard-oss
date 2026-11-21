@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../state/session.dart';
 import 'accounts_screen.dart';
+import 'channels_screen.dart';
 import 'chat_media_screen.dart';
 import 'chat_screen.dart';
 import 'home_shell.dart';
@@ -96,6 +97,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                 pageBuilder: (_, s) => _page(s, const SettingsScreen()),
                 routes: [
                   GoRoute(path: 'search', pageBuilder: (_, s) => _page(s, const SearchSettingsScreen())),
+                  GoRoute(path: 'channels', pageBuilder: (_, s) => _page(s, const ChannelsScreen())),
                 ],
               ),
               GoRoute(path: 'notifications', pageBuilder: (_, s) => _page(s, const NotificationsScreen())),

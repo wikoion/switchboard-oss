@@ -5,14 +5,16 @@ README). This file lists the third-party code this repository vendors, patches
 or links, the assets it bundles, and the container images the backend runs.
 Each licence was read from the package's own licence file or source headers at
 the version pinned here: `bridges/matrix/go.sum`, `sb/go.sum`,
-`core/Cargo.lock`, `app/pubspec.lock`, `deploy/versions.env` and
-`bridges/signal/Dockerfile`.
+`core/Cargo.lock`, `app/pubspec.lock`, `deploy/versions.env` and the
+Dockerfiles in `bridges/signal`, `bridges/discord` and `bridges/slack`.
 
 ## Vendored or patched
 
 | Component | Where | Licence |
 | --- | --- | --- |
 | [mautrix-signal](https://github.com/mautrix/signal) v0.2610.0 | `bridges/signal/patches/` (edits to upstream files) and `bridges/signal/overlay/` (new files built into the bridge) | AGPL-3.0-or-later, like the bridge |
+| [mautrix-discord](https://github.com/mautrix/discord), branch `megadiscord` at c915e03 | `bridges/discord/patches/` and `bridges/discord/overlay/`, likewise | AGPL-3.0-or-later, like the bridge |
+| [mautrix-slack](https://github.com/mautrix/slack) v0.2610.0 | `bridges/slack/patches/` and `bridges/slack/overlay/`, likewise | AGPL-3.0-or-later, like the bridge |
 | mautrix bridges' `docker-run.sh` | `bridges/matrix/docker-run.sh` follows its structure | AGPL-3.0-or-later |
 | [Cargokit](https://github.com/irondash/cargokit), Copyright 2022 Matej Knopp | `app/rust_builder/cargokit/` | MIT or Apache-2.0, at your option ([LICENSE](app/rust_builder/cargokit/LICENSE)) |
 | [flutter_rust_bridge](https://github.com/fzyzcjy/flutter_rust_bridge) 2.13.0 output | `core/src/frb_generated.rs`, `app/lib/src/rust/`, the `app/rust_builder/` plugin glue | Generated from Switchboard's code; flutter_rust_bridge itself is MIT |
@@ -64,8 +66,9 @@ also contains its base system's packages under their own licences.
 | --- | --- | --- |
 | `matrixdotorg/synapse` | [Synapse](https://github.com/element-hq/synapse) | AGPL-3.0-only, or an Element commercial licence |
 | `matrixdotorg/sygnal` | [Sygnal](https://github.com/element-hq/sygnal) | AGPL-3.0-only, or an Element commercial licence |
-| `dock.mau.dev/mautrix/*` (WhatsApp, Meta, Slack, Discord, Telegram, Twitter, LinkedIn, Google Messages, Bluesky, Google Voice) | [mautrix bridges](https://github.com/mautrix) | AGPL-3.0; most say "or any later version" in their source headers |
+| `dock.mau.dev/mautrix/*` (WhatsApp, Meta, Telegram, Twitter, LinkedIn, Google Messages, Bluesky, Google Voice) | [mautrix bridges](https://github.com/mautrix) | AGPL-3.0; most say "or any later version" in their source headers |
 | `switchboard/mautrix-signal`, built from `bridges/signal` | mautrix-signal with the patches above | AGPL-3.0-or-later, with libsignal under AGPL-3.0-only |
+| `switchboard/mautrix-discord` and `switchboard/mautrix-slack`, built from `bridges/discord` and `bridges/slack` | mautrix-discord and mautrix-slack with the patches above | AGPL-3.0-or-later |
 | `postgres` | [PostgreSQL](https://www.postgresql.org/about/licence/) | PostgreSQL License |
 | `caddy` | [Caddy](https://github.com/caddyserver/caddy) | Apache-2.0 |
 | `tailscale/tailscale` | [Tailscale](https://github.com/tailscale/tailscale) | BSD-3-Clause |

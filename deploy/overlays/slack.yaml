@@ -1,0 +1,5 @@
+network:
+    # DMs and group DMs always bridge. Channels bridge one by one, as chosen
+    # in the app's Settings; bridges/slack adds that choice on top of dm_only
+    # and carries over the channels an account bridged before.
+    dm_only: true

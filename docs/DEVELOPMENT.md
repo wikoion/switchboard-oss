@@ -19,6 +19,7 @@ and how it was checked.
 | `deploy/overlays/` | Config overlays applied to each bridge's upstream example |
 | `deploy/templates/` | Synapse, Caddy, Tailscale, Hub, Sygnal and Compose templates |
 | `bridges/signal/` | mautrix-signal at a pinned tag, with `patches/` and new files in `overlay/` |
+| `bridges/discord/`, `bridges/slack/` | mautrix-discord (a pinned `megadiscord` commit) and mautrix-slack (a pinned tag), with the channel selection in `patches/` and `overlay/` |
 | `bridges/matrix/` | `sb-matrix`, the bridgev2 connector for outside Matrix accounts |
 | `core/src/api/` | Everything Dart can call: `client.rs` (session, sync, chat list, timeline, media, Hub), `calls.rs` and `types.rs` |
 | `core/src/index.rs` | The on-device search index (SQLite FTS5) |
@@ -56,10 +57,34 @@ make test      # go vet and go test in sb/
   (`http://127.0.0.1:8080`). Its "bot answers a command" check fails for
   bridges that already have a management room (it sends an unprefixed `help`
   in a new DM, which those bots ignore): a fault in the test, not the bridge.
-- Bridges built here (`build:` in `bridges.yaml`) are `bridges/signal` and
-  `bridges/matrix`. When bumping mautrix-signal's tag, check whether each
-  patch in `bridges/signal/patches` is still needed; each one's header says
-  where it came from.
+- Bridges built here (`build:` in `bridges.yaml`) are `bridges/signal`,
+  `bridges/discord`, `bridges/slack` and `bridges/matrix`. When bumping a
+  patched bridge's tag or commit, check whether each patch in its `patches/`
+  is still needed and still applies; each one's header says where it came
+  from.
+- Discord and Slack bridge DMs always and channels one by one. The choice
+  lives in each login's metadata in the bridge's database, and both bridges
+  serve the same endpoints under their provisioning API, which the app
+  reaches through the Hub's proxy: `GET switchboard/v1/channels` lists what
+  the account can see by server or workspace, and `PUT` or `DELETE
+  switchboard/v1/channels/{group}/{channel}` turns one on or off (all with
+  `?login_id=`). Turning a channel off keeps its portal and room. A channel
+  is offered and saved only when the bridge could confirm the account's
+  access at that moment (Discord: View Channel worked out from the account's
+  roles, Slack: membership asked of Slack, not read from the bridge's
+  cache); when it can't tell, the channel isn't listed and `PUT` answers
+  502. Resyncs and message fetches read the selection when they run, so
+  work queued for a channel does nothing once it is turned off. Slack's
+  selection sits on top of upstream's `dm_only`, set in
+  `deploy/overlays/slack.yaml`; the first time a login connects with it on,
+  the channels it already bridges become its selection. Discord servers
+  bridged whole through upstream's `v1/guilds` API or `bridging_guild_ids`
+  stay bridged, and show as selected.
+- After changing a patched bridge or its overlay, `sb enable <bridge>`
+  rebuilds its image, merges the overlays into its config again and restarts
+  it (`sb up` rebuilds images but leaves bridge configs as they are). The
+  Discord and Slack Dockerfiles run their channel selection tests
+  (`go test ./pkg/connector/ -run Switchboard`) before building.
 - For iOS push, Synapse calls the Hub, which drops pushes for messages sent
   more than two minutes before their chat was created (history a bridge
   imports on linking) and passes the rest to Sygnal. At startup the Hub also
@@ -128,6 +153,37 @@ flutter_rust_bridge_codegen generate    # after changing core/src/api
   macOS. For crashes on a phone, `xcrun devicectl device info files --device
   <id> --domain-type systemCrashLogs` lists `NotificationService-*.ips`, and
   `xcrun devicectl device copy from` fetches one.
+- A notification from a sender with a picture is a communication
+  notification, which is what has iOS draw the picture where the app's icon
+  would be. That takes the Communication Notifications capability
+  (`com.apple.developer.usernotifications.communication` in
+  `Runner.entitlements`; automatic signing adds it to the profile) and
+  `INSendMessageIntent` under `NSUserActivityTypes` in the app's
+  `Info.plist`. Without them iOS shows the same text with the app's icon,
+  which is also what a sender with no picture gets. iOS words a
+  communication notification itself, from the intent and not from the title
+  and subtitle: the sender's name, with the intent's group name under it
+  when the intent has more than one recipient. That line carries the group
+  and the network ("Mum" over "Family · Signal", "Alice" over "WhatsApp").
+  The picture is the one on the sender's own profile and never the chat's:
+  the extension can only guess whether a chat is direct, and a group's
+  picture isn't its sender's.
+- Settings › Hide sender in notifications is a file in the app's support
+  directory, so a fresh install starts with it off. The notification
+  extension can't read that, so the app keeps a copy in the keychain group
+  the two share (`setHideSender` on the `switchboard/push` channel), written
+  at each launch and each change. The copy is a keychain item that exists
+  while senders are hidden. Hiding only adds it and leaves one that is
+  already there in place, so the write at launch never opens a moment in
+  which the extension finds none and names a sender; only turning the
+  setting off removes it. With it on, a notification says "New message" in
+  place of the sender and the chat and keeps the app's icon.
+  `SB_HIDE_SENDER=1 app/tool/test-notification-service.sh` renders a real
+  event that way.
+- `xcrun simctl push` doesn't run the notification extension. The Simulator
+  hands the payload straight to SpringBoard, which shows Sygnal's "New
+  message" as it came, `mutable-content` or not (iOS 18.6 and 26.3). What
+  the extension makes of a push shows only with one sent through APNs.
 - `app/tool/install-iphone.sh` builds a release and installs it with roamrun,
   a separate tool the author uses to install over Tailscale. It is optional:
   `flutter run --release` or Xcode installs on a phone without it.
@@ -149,6 +205,14 @@ file in `app/linux/packaging`.
 
 - The build needs rustup's `stable` toolchain at 1.99.1 or later, because
   cargokit builds the core with `rustup run stable`.
+- Desktop notifications carry the sender's picture as raw pixels (the
+  notification spec's `image-data`), their own and never the chat's, and
+  otherwise the app's icon from the
+  bundle (`assets/icon/switchboard-256.png`): for a sender with no picture,
+  one that can't be fetched, and every notification while Settings › Hide
+  sender in notifications is on. `ChatNotifications` in
+  `app/lib/src/desktop.dart` decides; `app/test/chat_notifications_test.dart`
+  drives it with a stand-in for the notification server.
 - `app/tool/linux-shot.sh /accounts out.png 1280x800` opens a route in the
   debug build under Xvfb and takes a screenshot.
 - `app/tool/linux-web-login-test.sh` runs the real WebKitGTK sign-in window

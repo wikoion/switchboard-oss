@@ -1,0 +1,123 @@
+Switchboard, November 2026 (against v0.2610.0): bridge channels one at a
+time. With dm_only on, upstream drops every channel; the login's metadata
+gains a set of chosen channels that pass dm_only's checks, are resynced
+next to the DMs on connect, and are seeded once from the channels the login
+already bridges. Portals of channels nobody chose are no longer resynced on
+connect, so a deselected channel keeps its room and history but gets
+nothing new. Resyncs and message fetches read the choice when they run, not
+when they were queued, so work queued for a channel does nothing once the
+channel is deselected. The helpers and the provisioning endpoints are in
+overlay/pkg/connector/switchboard_channels.go; overlay/pkg/slackid keeps the
+selection across a relink.
+
+diff --git a/pkg/connector/backfill.go b/pkg/connector/backfill.go
+index d0e2a3d..19561fa 100644
+--- a/pkg/connector/backfill.go
++++ b/pkg/connector/backfill.go
+@@ -59,6 +59,9 @@ func (s *SlackClient) FetchMessages(ctx context.Context, params bridgev2.FetchMe
+ 	if channelID == "" {
+ 		return nil, fmt.Errorf("invalid channel ID")
+ 	}
++	if !s.backfillAllowed(params.Portal, channelID) {
++		return backfillStopped(params), nil
++	}
+ 	var anchorMessageID string
+ 	if params.AnchorMessage != nil {
+ 		_, _, anchorMessageID, _ = slackid.ParseMessageID(params.AnchorMessage.ID)
+@@ -104,6 +107,11 @@ func (s *SlackClient) FetchMessages(ctx context.Context, params bridgev2.FetchMe
+ 		}
+ 		return nil, err
+ 	}
++	// Checked again now that Slack has answered: if the channel was
++	// deselected meanwhile, what came back may be newer than that.
++	if !s.backfillAllowed(params.Portal, channelID) {
++		return backfillStopped(params), nil
++	}
+ 	convertedMessages := make([]*bridgev2.BackfillMessage, 0, len(chunk.Messages))
+ 	var maxMsgID string
+ 	for _, msg := range chunk.Messages {
+diff --git a/pkg/connector/client.go b/pkg/connector/client.go
+index 4768414..282e08d 100644
+--- a/pkg/connector/client.go
++++ b/pkg/connector/client.go
+@@ -249,6 +249,7 @@ func (s *SlackClient) connect(ctx context.Context, bootResp *slack.ClientUserBoo
+ 		for idx := range bootResp.IMs {
+ 			s.addDMChannel(&bootResp.IMs[idx].Channel)
+ 		}
++		s.seedChannelSelection(ctx)
+ 	}
+ 	err := s.syncTeamPortal(ctx)
+ 	if err != nil {
+@@ -445,7 +446,7 @@ func (s *SlackClient) isDMChannel(channelID string) bool {
+ 	if !s.Main.Config.DMOnly || strings.HasPrefix(channelID, "D") {
+ 		return true
+ 	}
+-	return s.dmChannelIDs.Has(channelID)
++	return s.dmChannelIDs.Has(channelID) || s.channelSelected(channelID)
+ }
+ 
+ func (s *SlackClient) getLatestMessageIDs(ctx context.Context) map[string]string {
+@@ -555,6 +556,9 @@ func (s *SlackClient) syncChannels(ctx context.Context, channels []*slack.Channe
+ 			}
+ 		}
+ 	}
++	if s.Main.Config.DMOnly {
++		channels = append(channels, s.selectedChannelsForSync(ctx)...)
++	}
+ 	if latestMessageIDs != nil {
+ 		slices.SortFunc(channels, func(a, b *slack.Channel) int {
+ 			return cmp.Compare(latestMessageIDs[a.ID], latestMessageIDs[b.ID])
+@@ -599,7 +603,8 @@ func (s *SlackClient) syncChannels(ctx context.Context, channels []*slack.Channe
+ 	}
+ 	for portalKey := range existingPortals {
+ 		_, channelID := slackid.ParsePortalID(portalKey.ID)
+-		if channelID == "" {
++		if channelID == "" || !s.isDMChannel(channelID) {
++			// Not a channel, or one that dm_only keeps out and nobody chose.
+ 			continue
+ 		}
+ 		latestMessageID, ok := latestMessageIDs[channelID]
+diff --git a/pkg/connector/connector.go b/pkg/connector/connector.go
+index 3b69b77..b858e7e 100644
+--- a/pkg/connector/connector.go
++++ b/pkg/connector/connector.go
+@@ -60,6 +60,7 @@ func (s *SlackConnector) SetUseDirectMedia() {
+ }
+ 
+ func (s *SlackConnector) Start(ctx context.Context) error {
++	s.setUpSwitchboardChannels()
+ 	return s.DB.Upgrade(ctx)
+ }
+ 
+diff --git a/pkg/connector/handleslack.go b/pkg/connector/handleslack.go
+index 78b8706..8448c74 100644
+--- a/pkg/connector/handleslack.go
++++ b/pkg/connector/handleslack.go
+@@ -663,6 +663,10 @@ func (s *SlackChatResync) GetChatInfo(ctx context.Context, portal *bridgev2.Port
+ }
+ 
+ func (s *SlackChatResync) CheckNeedsBackfill(ctx context.Context, latestBridgedMessage *database.Message) (bool, error) {
++	if !s.stillBridges() {
++		// Deselected since the resync was queued.
++		return false, nil
++	}
+ 	if latestBridgedMessage == nil {
+ 		return s.LatestMessage != "" && s.LatestMessage != "0000000000.000000", nil
+ 	}
+diff --git a/pkg/slackid/dbmeta.go b/pkg/slackid/dbmeta.go
+index 6372777..d2d75bf 100644
+--- a/pkg/slackid/dbmeta.go
++++ b/pkg/slackid/dbmeta.go
+@@ -37,6 +37,12 @@ type UserLoginMetadata struct {
+ 	Token       string `json:"token"`
+ 	CookieToken string `json:"cookie_token,omitempty"`
+ 	AppToken    string `json:"app_token,omitempty"`
++
++	// Switchboard: the channels chosen to bridge while dm_only is on, by
++	// channel ID, and whether the channels bridged before the choice
++	// existed have been carried over into it.
++	SwitchboardChannels       map[string]bool `json:"switchboard_channels,omitempty"`
++	SwitchboardChannelsSeeded bool            `json:"switchboard_channels_seeded,omitempty"`
+ }
+ 
+ type MessageMetadata struct {

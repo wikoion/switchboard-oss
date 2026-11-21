@@ -3,8 +3,10 @@
 
 The Hub asks each bridge's /_matrix/provision/v3/whoami for its network and
 logins; these answer with fictional accounts, so the app's Accounts screen,
-view switcher and Add account list have something to show. Nothing here
-talks to a real network.
+view switcher and Add account list have something to show. Slack and Discord
+also answer the channel selection endpoints of bridges/slack and
+bridges/discord, keeping the selection in memory, for Settings > Channels.
+Nothing here talks to a real network.
 
     fake_bridges.py serve DOMAIN FIRST_PORT
     fake_bridges.py hub-config OWNER_MXID HOMESERVER_URL LISTEN FIRST_PORT
@@ -18,7 +20,7 @@ import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 # id, display name, network ID, bridge type, logins, login flows. The phone
 # numbers are in Ofcom's 07700 900xxx range, kept for drama and fiction.
@@ -50,6 +52,33 @@ BRIDGES = [
      [("password", "Password", "Sign in with your homeserver, username and password")]),
 ]
 
+# Bridge id to login id to that account's servers or workspaces: (id, name,
+# channels), each channel (id, name, section, private, selected). Two of the
+# Discord servers have a #general, as real ones do.
+CHANNELS = {
+    "slack": {"T0NWIND-U04ALEX": [
+        ("T0NWIND", "Northwind", [
+            ("C01", "announcements", None, False, True),
+            ("C02", "design", None, False, True),
+            ("C03", "general", None, False, False),
+            ("C04", "leadership", None, True, False),
+            ("C05", "random", None, False, False),
+        ]),
+    ]},
+    "discord": {"301122334455": [
+        ("9001", "Harbour Sailing Club", [
+            ("9101", "general", None, False, False),
+            ("9102", "race-days", "Events", False, True),
+            ("9103", "boat-maintenance", "Workshop", False, False),
+        ]),
+        ("9002", "Pixel Pushers", [
+            ("9201", "general", None, False, False),
+            ("9202", "show-and-tell", None, False, False),
+        ]),
+    ]},
+}
+CHANNELS_PATH = "/_matrix/provision/switchboard/v1/channels"
+
 
 def handler_for(bridge, domain):
     bid, display, network_id, bridge_type, logins, flows = bridge
@@ -73,6 +102,21 @@ def handler_for(bridge, domain):
         "/_matrix/provision/v3/whoami": whoami,
         "/_matrix/provision/v3/login/flows": {"flows": whoami["login_flows"]},
     }
+    # login id -> {(group id, channel id): selected}, changed by PUT and DELETE.
+    selection = {
+        login_id: {(gid, cid): on for gid, _, chans in groups for cid, _, _, _, on in chans}
+        for login_id, groups in CHANNELS.get(bid, {}).items()
+    }
+
+    def list_channels(login_id):
+        return {"groups": [
+            {"id": gid, "name": name, "channels": [
+                {"id": cid, "name": cname, "selected": selection[login_id][(gid, cid)],
+                 **({"section": section} if section else {}), **({"private": True} if private else {})}
+                for cid, cname, section, private, _ in chans
+            ]}
+            for gid, name, chans in CHANNELS[bid][login_id]
+        ]}
 
     class Handler(BaseHTTPRequestHandler):
         def _send(self, status, body):
@@ -83,12 +127,47 @@ def handler_for(bridge, domain):
             self.end_headers()
             self.wfile.write(data)
 
+        def _login(self):
+            """The login a channel request names; answers 404 if there is none."""
+            url = urlparse(self.path)
+            login_id = parse_qs(url.query).get("login_id", [""])[0]
+            if not url.path.startswith(CHANNELS_PATH) or bid not in CHANNELS:
+                self._send(404, {"errcode": "M_UNRECOGNIZED", "error": "not in the demo"})
+            elif login_id not in selection:
+                self._send(404, {"errcode": "M_NOT_FOUND", "error": "Login not found"})
+            else:
+                return login_id
+            return None
+
+        def _select(self, selected):
+            login_id = self._login()
+            if login_id is None:
+                return
+            key = tuple(urlparse(self.path).path[len(CHANNELS_PATH):].strip("/").split("/"))
+            if key not in selection[login_id]:
+                self._send(404, {"errcode": "M_NOT_FOUND", "error": "This account can't see that channel"})
+                return
+            selection[login_id][key] = selected
+            self._send(200, {"group_id": key[0], "id": key[1], "selected": selected})
+
         def do_GET(self):
-            body = routes.get(urlparse(self.path).path)
+            path = urlparse(self.path).path
+            if path == CHANNELS_PATH and bid in CHANNELS:
+                login_id = self._login()
+                if login_id is not None:
+                    self._send(200, list_channels(login_id))
+                return
+            body = routes.get(path)
             if body is None:
                 self._send(404, {"errcode": "M_NOT_FOUND", "error": "not in the demo"})
             else:
                 self._send(200, body)
+
+        def do_PUT(self):
+            self._select(True)
+
+        def do_DELETE(self):
+            self._select(False)
 
         def do_POST(self):
             self._send(400, {"errcode": "M_UNKNOWN", "error": "The demo backend can't link accounts"})

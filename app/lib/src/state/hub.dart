@@ -9,9 +9,12 @@ import '../rust/api/types.dart';
 import 'session.dart';
 
 class HubException implements Exception {
-  HubException(this.message, {this.status});
+  HubException(this.message, {this.status, this.code});
   final String message;
   final int? status;
+
+  /// The Matrix-style `errcode`, when the answer carried one.
+  final String? code;
   @override
   String toString() => message;
 }
@@ -131,6 +134,59 @@ class Bridge {
   String get protocolId => networkId ?? id;
   final List<LoginFlow> flows;
   final List<BridgeLogin> logins;
+
+  /// Whether this network has channels that are bridged one by one, chosen
+  /// in Settings. Their DMs always bridge.
+  bool get hasChannels =>
+      supportsApi && channelNetworks.any((n) => id == n || protocolId == n || protocolId == '${n}go');
+}
+
+/// Networks whose bridges take a per-channel selection. Both are built in
+/// this repository (`bridges/discord`, `bridges/slack`) with the same
+/// `switchboard/v1/channels` provisioning endpoints.
+const channelNetworks = {'discord', 'slack'};
+
+/// A channel a linked account can see, and whether its bridge passes it on.
+class BridgeChannel {
+  BridgeChannel({required this.id, required this.name, required this.selected, this.section, this.private = false});
+
+  factory BridgeChannel.fromJson(Map<String, dynamic> j) => BridgeChannel(
+        id: j['id'] as String,
+        name: j['name'] as String? ?? j['id'] as String,
+        selected: j['selected'] as bool? ?? false,
+        section: (j['section'] as String?)?.nullIfEmpty,
+        private: j['private'] as bool? ?? false,
+      );
+
+  final String id;
+  final String name;
+
+  /// What the bridge has saved, not what was last tapped.
+  final bool selected;
+
+  /// A Discord category, when the channel is in one.
+  final String? section;
+  final bool private;
+}
+
+/// A Discord server or Slack workspace, with the channels the account can
+/// see in it. Two servers can each have a #general; the group tells them
+/// apart.
+class ChannelGroup {
+  ChannelGroup({required this.id, required this.name, required this.channels});
+
+  factory ChannelGroup.fromJson(Map<String, dynamic> j) => ChannelGroup(
+        id: j['id'] as String,
+        name: j['name'] as String? ?? j['id'] as String,
+        channels: [
+          for (final c in (j['channels'] as List? ?? const []))
+            BridgeChannel.fromJson((c as Map).cast<String, dynamic>()),
+        ],
+      );
+
+  final String id;
+  final String name;
+  final List<BridgeChannel> channels;
 }
 
 class InputField {
@@ -347,7 +403,8 @@ class HubApi {
     final decoded = resp.body.isEmpty ? null : _tryDecode(resp.body);
     if (resp.status >= 400) {
       final msg = decoded is Map ? (decoded['error'] ?? decoded['errcode']) : null;
-      throw HubException(msg?.toString() ?? 'HTTP ${resp.status}', status: resp.status);
+      final code = decoded is Map ? decoded['errcode'] : null;
+      throw HubException(msg?.toString() ?? 'HTTP ${resp.status}', status: resp.status, code: code?.toString());
     }
     return decoded;
   }
@@ -412,6 +469,37 @@ class HubApi {
   Future<void> logout(String bridge, String loginId) async {
     await _call('POST', _p(bridge, 'logout/${Uri.encodeComponent(loginId)}'), {});
   }
+
+  String _channels(String bridge, String loginId, [String rest = '']) =>
+      '/bridges/${Uri.encodeComponent(bridge)}/provision/switchboard/v1/channels$rest'
+      '?login_id=${Uri.encodeQueryComponent(loginId)}';
+
+  /// The channels an account can see, by server or workspace, each with
+  /// whether the bridge has it selected.
+  Future<List<ChannelGroup>> channels(String bridge, String loginId) async {
+    final j = await _call('GET', _channels(bridge, loginId));
+    if (j is! Map) throw HubException("The bridge didn't list its channels");
+    return [
+      for (final g in (j['groups'] as List? ?? const []))
+        ChannelGroup.fromJson((g as Map).cast<String, dynamic>()),
+    ];
+  }
+
+  /// Starts or stops bridging one channel, and returns what the bridge
+  /// saved. Stopping keeps the chat and its history.
+  Future<bool> setChannelBridged(
+    String bridge,
+    String loginId,
+    String groupId,
+    String channelId, {
+    required bool bridged,
+  }) async {
+    final path = _channels(bridge, loginId, '/${Uri.encodeComponent(groupId)}/${Uri.encodeComponent(channelId)}');
+    final j = await _call(bridged ? 'PUT' : 'DELETE', path);
+    final saved = j is Map ? j['selected'] : null;
+    if (saved is! bool) throw HubException("The bridge didn't confirm the change");
+    return saved;
+  }
 }
 
 final hubProvider = Provider<HubApi>((ref) => HubApi.core(ref.watch(coreProvider)));
@@ -431,6 +519,19 @@ final bridgesProvider = FutureProvider<List<Bridge>>((ref) {
   ref.listen(hubEventsProvider, (_, _) => ref.invalidateSelf());
   return ref.watch(hubProvider).bridges();
 });
+
+/// One linked account, as the channel settings key it.
+typedef ChannelAccount = ({String bridge, String login});
+
+/// The channels one account can see and which of them are bridged. Fetched
+/// from the bridge each time Settings opens: the bridge holds the
+/// selection, so it is the same after a relaunch and on every device.
+final channelsProvider = FutureProvider.autoDispose.family<List<ChannelGroup>, ChannelAccount>(
+  (ref, account) => ref.watch(hubProvider).channels(account.bridge, account.login),
+  // A failure stays on screen with its own "Try again", instead of
+  // flickering back to loading while Riverpod retries behind it.
+  retry: (_, _) => null,
+);
 
 /// Something wrong with an account or bridge, for the inbox.
 class AccountProblem {
