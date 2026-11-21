@@ -9,7 +9,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 import 'types.dart';
 
-// These functions are ignored because they are not marked as `pub`: `archived_at`, `dm_avatar`, `edited_message_ts`, `favourite_order`, `fetch_room_state`, `fill_gap`, `focused_timeline`, `is_message`, `item_id`, `matrix_client`, `member`, `mentions_of`, `network_key`, `network`, `note_to_self_room`, `open_index`, `parse_bridge_state`, `read_if_no_messages`, `read_room_state`, `read_to_newest`, `room_diff`, `room`, `round_avatar`, `save_network`, `saved_network`, `send_handle`, `server_state`, `shown_in_chat`, `space_child`, `store_path`, `stored_bridge_state`, `stream_hub_events`, `summaries`, `summary`, `sync`, `timeline_diff`, `timeline_with`, `timeline`, `track_ids`, `watch_gaps`, `wrap`
+// These functions are ignored because they are not marked as `pub`: `archived_at`, `dm_avatar`, `edited_message_ts`, `favourite_order`, `fetch_room_state`, `fill_gap`, `focused_timeline`, `is_message`, `item_id`, `matrix_client`, `member`, `mentions_of`, `network_key`, `network`, `note_to_self_room`, `open_index`, `opened_threads`, `parse_bridge_state`, `read_if_no_messages`, `read_room_state`, `read_to_newest`, `room_diff`, `room`, `round_avatar`, `save_network`, `saved_network`, `send_handle`, `server_state`, `shown_in_chat`, `space_child`, `store_path`, `stored_bridge_state`, `stream_hub_events`, `stream_timeline`, `summaries`, `summary`, `sync`, `thread_timeline`, `timeline_diff`, `timeline_in`, `timeline_with`, `timeline`, `track_ids`, `watch_gaps`, `wrap`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Inner`, `SavedNetwork`, `ServerState`, `StoredSession`
 // These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`
 
@@ -141,6 +141,14 @@ abstract class SwitchboardCore implements RustOpaqueInterface {
     required int count,
   });
 
+  /// Loads older replies of a thread. Returns true once its start is
+  /// reached.
+  Future<bool> paginateThread({
+    required String roomId,
+    required String rootId,
+    required int count,
+  });
+
   /// Unsends a message: redacts it, or drops it if it hasn't gone yet.
   Future<void> redact({required String roomId, required String id});
 
@@ -202,25 +210,30 @@ abstract class SwitchboardCore implements RustOpaqueInterface {
     int? height,
     int? durationMs,
     required bool isVoice,
+    String? threadRoot,
   });
 
-  /// Replies to `event_id` with a Markdown text message.
+  /// Replies to `event_id` with a Markdown text message; within the
+  /// thread under `thread_root` when the message replied to is in one.
   Future<void> sendReply({
     required String roomId,
     required String body,
     required String eventId,
     required List<String> mentions,
+    String? threadRoot,
   });
 
   /// Queues a Markdown text message. It shows at once as a local echo and
   /// is retried by the send queue if the server can't be reached.
   ///
   /// `mentions` are the user IDs the body links to with matrix.to pills;
-  /// they go in `m.mentions` so the server and bridges notify them.
+  /// they go in `m.mentions` so the server and bridges notify them. With
+  /// `thread_root` the message goes into the thread under that message.
   Future<void> sendText({
     required String roomId,
     required String body,
     required List<String> mentions,
+    String? threadRoot,
   });
 
   String sessionJson();
@@ -294,6 +307,14 @@ abstract class SwitchboardCore implements RustOpaqueInterface {
   Stream<List<RoomListDiff>> subscribeRoomList();
 
   Stream<SyncStatus> subscribeSyncStatus();
+
+  /// Streams the replies in the thread under `root_id`, oldest first: a
+  /// `Reset` first, then batches of changes. The message that started the
+  /// thread is the first item once the start is reached.
+  Stream<List<TimelineDiff>> subscribeThread({
+    required String roomId,
+    required String rootId,
+  });
 
   /// Streams one room's timeline: a `Reset` first, then batches of changes.
   Stream<List<TimelineDiff>> subscribeTimeline({required String roomId});

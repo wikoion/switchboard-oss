@@ -20,8 +20,12 @@ EventItem message(
   SendState state = const SendState.sent(),
   String? txn,
   int minutes = 0,
+  ThreadSummary? thread,
+  String? threadRoot,
 }) =>
     EventItem(
+      thread: thread,
+      threadRoot: threadRoot,
       eventId: id.isEmpty ? null : id,
       transactionId: txn,
       canReply: id.isNotEmpty,
@@ -48,11 +52,11 @@ class FakeTimeline extends TimelineNotifier {
   TimelineState build() => TimelineState(items: [for (final e in items) item(e)], atStart: true);
 
   @override
-  Future<void> send(String body, {List<String> mentions = const []}) async =>
-      calls.add(['send $body', ...mentions].join(' '));
+  Future<void> send(String body, {List<String> mentions = const [], String? threadRoot}) async =>
+      calls.add([if (threadRoot != null) 'in $threadRoot', 'send $body', ...mentions].join(' '));
   @override
-  Future<void> reply(String body, String eventId, {List<String> mentions = const []}) async =>
-      calls.add('reply $eventId $body');
+  Future<void> reply(String body, String eventId, {List<String> mentions = const [], String? threadRoot}) async =>
+      calls.add([if (threadRoot != null) 'in $threadRoot', 'reply $eventId $body'].join(' '));
   @override
   Future<void> edit(String id, String body) async => calls.add('edit $id $body');
   @override
@@ -64,9 +68,44 @@ class FakeTimeline extends TimelineNotifier {
   @override
   Future<void> react(String eventId, String key) async => calls.add('react $eventId $key');
   @override
-  Future<void> sendFile(String path, String mimeType, {int? width, int? height, int? durationMs, bool isVoice = false}) async =>
-      calls.add('file $path $mimeType');
+  Future<void> sendFile(
+    String path,
+    String mimeType, {
+    int? width,
+    int? height,
+    int? durationMs,
+    bool isVoice = false,
+    String? threadRoot,
+  }) async =>
+      calls.add([if (threadRoot != null) 'in $threadRoot', 'file $path $mimeType'].join(' '));
 }
+
+/// A thread's replies as the core streams them, with the message that
+/// started it first.
+class FakeThread extends ThreadNotifier {
+  FakeThread(super.key, this.items);
+  final List<EventItem> items;
+
+  @override
+  TimelineState build() => TimelineState(items: [for (final e in items) item(e)], atStart: true);
+}
+
+/// Slack: no replies other than threads.
+const threadsOnly = RoomFeatures(
+  reply: 0,
+  thread: 2,
+  edit: 2,
+  delete: 2,
+  reaction: 2,
+  allowedReactions: [],
+  images: true,
+  video: true,
+  audio: true,
+  voice: false,
+  files: true,
+  typingNotifications: true,
+  readReceipts: true,
+);
 
 final room = RoomSummary(
   id: roomId,
@@ -92,6 +131,7 @@ Future<FakeTimeline> open(
   List<Member> typing = const [],
   List<Member> members = const [],
   RoomFeatures? features,
+  Map<String, List<EventItem>> threads = const {},
 }) async {
   notices.clear();
   final fake = FakeTimeline(events);
@@ -104,6 +144,10 @@ Future<FakeTimeline> open(
       typingProvider(roomId).overrideWith((ref) => Stream.value(typing)),
       typingNoticeProvider(roomId).overrideWithValue(notices.add),
       roomFeaturesProvider(roomId).overrideWith((ref) async => features),
+      for (final MapEntry(key: rootId, value: replies) in threads.entries)
+        threadProvider((roomId: roomId, rootId: rootId)).overrideWith(
+          () => FakeThread((roomId: roomId, rootId: rootId), replies),
+        ),
     ],
     child: const MaterialApp(home: ChatScreen(roomId: roomId)),
   ));
@@ -171,6 +215,93 @@ void main() {
     await tester.tap(find.byIcon(Icons.arrow_upward_rounded));
     await tester.pumpAndSettle();
     expect(fake.calls, ['send hi']);
+  });
+
+  group('threads', () {
+    final root = message(
+      r'$root',
+      'Deploy is at 3',
+      thread: const ThreadSummary(replyCount: 2, latestSenderName: 'Alice', latestText: 'Done'),
+    );
+    final replies = [
+      root,
+      message(r'$r1', 'On it', own: true, threadRoot: r'$root', minutes: 1),
+      message(r'$r2', 'Done', threadRoot: r'$root', minutes: 2),
+    ];
+
+    testWidgets('a thread shows as a line under its message and opens in place', (tester) async {
+      await open(tester, [root, message(r'$after', 'Lunch?', minutes: 5)], threads: {r'$root': replies});
+      expect(find.text('2 replies'), findsOneWidget);
+      expect(find.textContaining('Alice: Done'), findsOneWidget);
+      // The replies aren't in the chat until the thread is opened.
+      expect(find.text('On it'), findsNothing);
+
+      await tester.tap(find.text('2 replies'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('On it'), findsOneWidget);
+      expect(find.text('Done'), findsOneWidget);
+      // The message that started it isn't repeated among its replies.
+      expect(find.text('Deploy is at 3'), findsOneWidget);
+      // Under the message, above what came after it in the chat.
+      expect(tester.getTopLeft(find.text('Done')).dy, lessThan(tester.getTopLeft(find.text('Lunch?')).dy));
+      expect(tester.getTopLeft(find.text('Done')).dy, greaterThan(tester.getTopLeft(find.text('Deploy is at 3')).dy));
+
+      await tester.tap(find.text('2 replies'));
+      await tester.pump();
+      expect(find.text('On it'), findsNothing);
+    });
+
+    testWidgets('Reply in thread keeps the composer in the thread for every message after', (tester) async {
+      final fake = await open(tester, [root], features: threadsOnly, threads: {r'$root': replies});
+      await tester.tap(find.text('2 replies'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.tap(find.widgetWithText(TextButton, 'Reply in thread'));
+      await tester.pump();
+      expect(find.text('Replying in thread'), findsOneWidget);
+
+      for (final text in ['First', 'Second']) {
+        await tester.enterText(find.byType(TextField), text);
+        await tester.pump();
+        await tester.tap(find.byIcon(Icons.arrow_upward_rounded));
+        await tester.pump();
+      }
+      expect(fake.calls, [r'in $root send First', r'in $root send Second']);
+      expect(find.text('Replying in thread'), findsOneWidget);
+
+      // Closing the banner goes back to the channel.
+      await tester.tap(find.byIcon(Icons.close_rounded));
+      await tester.pump();
+      expect(find.text('Replying in thread'), findsNothing);
+      await tester.enterText(find.byType(TextField), 'To everyone');
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.arrow_upward_rounded));
+      await tester.pump();
+      expect(fake.calls.last, 'send To everyone');
+    });
+
+    testWidgets('where the network has only threads, a swipe starts one', (tester) async {
+      final fake = await open(tester, [message(r'$2', 'Are you around?')], features: threadsOnly, threads: {r'$2': []});
+      await tester.drag(find.text('Are you around?'), const Offset(200, 0));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('Replying in thread'), findsOneWidget);
+      expect(find.text('Thread'), findsOneWidget);
+      await tester.enterText(find.byType(TextField), 'Yes');
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.arrow_upward_rounded));
+      await tester.pump();
+      expect(fake.calls, [r'in $2 send Yes']);
+    });
+
+    testWidgets("networks without threads don't offer them", (tester) async {
+      await open(tester, [message(r'$2', 'Are you around?')]);
+      await tester.longPress(find.text('Are you around?'));
+      await tester.pumpAndSettle();
+      expect(find.text('Reply'), findsOneWidget);
+      expect(find.text('Reply in thread'), findsNothing);
+    });
   });
 
   testWidgets('typing: shows who is typing and sends our own notices', (tester) async {
@@ -241,6 +372,7 @@ void main() {
   testWidgets("actions the network can't do are hidden", (tester) async {
     const noEdits = RoomFeatures(
       reply: 2,
+      thread: 0,
       edit: -2,
       delete: 2,
       reaction: 0,

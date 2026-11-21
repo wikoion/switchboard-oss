@@ -132,6 +132,16 @@ flutter_rust_bridge_codegen generate    # after changing core/src/api
   newest event isn't a message (a reaction, a delivery receipt) would keep an
   old preview and place. `watch_gaps` in the core fetches such chats' history
   back to a message after each sync.
+- Threads (Slack, Discord server channels, Matrix): a chat's timeline leaves
+  out replies in threads (`hide_threaded_events`), and the message that
+  started one carries a count and the newest reply. Opening the line under
+  it subscribes to a timeline of that thread (`subscribe_thread`), shown in
+  place. Sending with a `thread_root` goes through the thread's timeline,
+  which adds the relation. Which chats can start threads comes from the
+  bridge's `com.beeper.room_features` (`thread`). The chat's read receipt is
+  for its main timeline, so `mark_read` follows it with an unthreaded one
+  while anything is unread. Not built yet: unread counts per thread, and
+  taking the reader to a thread whose new reply notified them.
 
 ### iOS
 

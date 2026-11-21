@@ -10,7 +10,8 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::api::types::{
-    BridgeStatus, EventBody, LinkPreview, EventItem, Preview, Reaction, ReplyPreview, SendState, TimelineItem,
+    BridgeStatus, EventBody, LinkPreview, EventItem, Preview, Reaction, ReplyPreview, SendState, ThreadSummary,
+    TimelineItem,
     TimelineItemKind,
 };
 
@@ -133,6 +134,24 @@ pub(crate) fn timeline_item(item: &SdkItem) -> TimelineItem {
 }
 
 fn event_item(e: &EventTimelineItem) -> EventItem {
+    let (thread, thread_root) = match e.content() {
+        TimelineItemContent::MsgLike(m) => (
+            m.thread_summary.as_ref().filter(|t| t.num_replies > 0).map(|t| {
+                let latest = match &t.latest_event {
+                    TimelineDetails::Ready(ev) => Some(ev),
+                    _ => None,
+                };
+                ThreadSummary {
+                    reply_count: t.num_replies,
+                    latest_sender_name: latest.and_then(|ev| profile_name(&ev.sender_profile)),
+                    latest_text: latest.map(|ev| content_text(&ev.content)),
+                    latest_timestamp_ms: latest.map(|ev| millis(ev.timestamp)),
+                }
+            }),
+            m.thread_root.as_ref().map(|id| id.to_string()),
+        ),
+        _ => (None, None),
+    };
     let (body, reactions, reply_to, is_edited) = match e.content() {
         TimelineItemContent::MsgLike(m) => {
             let own = e.is_own();
@@ -212,6 +231,8 @@ fn event_item(e: &EventTimelineItem) -> EventItem {
         link_preview: e.latest_json().and_then(|raw| beeper_link_preview(raw.json().get())),
         unresolved_media: latest.as_ref().and_then(|c| c.get("com.beeper.unresolved_media")).map(|v| v.to_string()),
         external_url: latest.as_ref().and_then(|c| c["external_url"].as_str()).map(str::to_owned),
+        thread,
+        thread_root,
     }
 }
 
@@ -360,6 +381,7 @@ pub(crate) fn room_features(json: &str) -> Option<crate::api::types::RoomFeature
     let flag = |k: &str| c[k].as_bool().unwrap_or(false);
     Some(crate::api::types::RoomFeatures {
         reply: level("reply"),
+        thread: level("thread"),
         edit: level("edit"),
         delete: level("delete"),
         reaction: level("reaction"),

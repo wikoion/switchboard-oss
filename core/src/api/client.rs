@@ -72,6 +72,9 @@ struct Inner {
     timelines: Mutex<HashMap<OwnedRoomId, Arc<Timeline>>>,
     /// A timeline around one event per room, for opening a search result.
     focused: Mutex<HashMap<OwnedRoomId, (OwnedEventId, Arc<Timeline>)>>,
+    /// The replies of each thread that has been opened, by the message
+    /// that started it.
+    threads: Mutex<HashMap<(OwnedRoomId, OwnedEventId), Arc<Timeline>>>,
     index: Arc<Indexer>,
     /// Networks found so far. Rooms without one aren't kept here, so a
     /// later `m.bridge` still gets picked up.
@@ -223,6 +226,7 @@ impl SwitchboardCore {
                 sync: OnceCell::new(),
                 timelines: Mutex::new(HashMap::new()),
                 focused: Mutex::new(HashMap::new()),
+                threads: Mutex::new(HashMap::new()),
                 index,
                 networks: StdMutex::new(HashMap::new()),
                 features: StdMutex::new(HashMap::new()),
@@ -408,22 +412,7 @@ impl SwitchboardCore {
             anyhow::Ok(timeline)
         })
         .await?;
-        runtime::spawn(async move {
-            let (items, stream) = timeline.subscribe().await;
-            let reset = TimelineDiff::Reset {
-                values: items.iter().map(|i| convert::timeline_item(i)).collect(),
-            };
-            if sink.add(vec![reset]).is_err() {
-                return;
-            }
-            pin_mut!(stream);
-            while let Some(diffs) = stream.next().await {
-                let out = diffs.into_iter().map(timeline_diff).collect();
-                if sink.add(out).is_err() {
-                    break;
-                }
-            }
-        });
+        stream_timeline(timeline, sink);
         Ok(())
     }
 
@@ -448,23 +437,33 @@ impl SwitchboardCore {
     ) -> Result<()> {
         let inner = self.inner.clone();
         let timeline = runtime::run(async move { inner.focused_timeline(&room_id, &event_id).await }).await?;
-        runtime::spawn(async move {
-            let (items, stream) = timeline.subscribe().await;
-            let reset = TimelineDiff::Reset {
-                values: items.iter().map(|i| convert::timeline_item(i)).collect(),
-            };
-            if sink.add(vec![reset]).is_err() {
-                return;
-            }
-            pin_mut!(stream);
-            while let Some(diffs) = stream.next().await {
-                let out = diffs.into_iter().map(timeline_diff).collect();
-                if sink.add(out).is_err() {
-                    break;
-                }
-            }
-        });
+        stream_timeline(timeline, sink);
         Ok(())
+    }
+
+    /// Streams the replies in the thread under `root_id`, oldest first: a
+    /// `Reset` first, then batches of changes. The message that started the
+    /// thread is the first item once the start is reached.
+    pub async fn subscribe_thread(
+        &self,
+        room_id: String,
+        root_id: String,
+        sink: StreamSink<Vec<TimelineDiff>>,
+    ) -> Result<()> {
+        let inner = self.inner.clone();
+        let timeline = runtime::run(async move { inner.thread_timeline(&room_id, &root_id).await }).await?;
+        stream_timeline(timeline, sink);
+        Ok(())
+    }
+
+    /// Loads older replies of a thread. Returns true once its start is
+    /// reached.
+    pub async fn paginate_thread(&self, room_id: String, root_id: String, count: u16) -> Result<bool> {
+        let inner = self.inner.clone();
+        runtime::run(async move {
+            Ok(inner.thread_timeline(&room_id, &root_id).await?.paginate_backwards(count).await?)
+        })
+        .await
     }
 
     /// Loads older messages around the focused event, or newer ones with
@@ -582,11 +581,18 @@ impl SwitchboardCore {
     /// is retried by the send queue if the server can't be reached.
     ///
     /// `mentions` are the user IDs the body links to with matrix.to pills;
-    /// they go in `m.mentions` so the server and bridges notify them.
-    pub async fn send_text(&self, room_id: String, body: String, mentions: Vec<String>) -> Result<()> {
+    /// they go in `m.mentions` so the server and bridges notify them. With
+    /// `thread_root` the message goes into the thread under that message.
+    pub async fn send_text(
+        &self,
+        room_id: String,
+        body: String,
+        mentions: Vec<String>,
+        thread_root: Option<String>,
+    ) -> Result<()> {
         let inner = self.inner.clone();
         runtime::run(async move {
-            let timeline = inner.timeline(&room_id).await?;
+            let timeline = inner.timeline_in(&room_id, thread_root.as_deref()).await?;
             let content = RoomMessageEventContent::text_markdown(body).add_mentions(mentions_of(&mentions)?);
             timeline.send(content.into()).await?;
             Ok(())
@@ -607,10 +613,11 @@ impl SwitchboardCore {
         height: Option<u32>,
         duration_ms: Option<u32>,
         is_voice: bool,
+        thread_root: Option<String>,
     ) -> Result<()> {
         let inner = self.inner.clone();
         runtime::run(async move {
-            let timeline = inner.timeline(&room_id).await?;
+            let timeline = inner.timeline_in(&room_id, thread_root.as_deref()).await?;
             let mime: mime::Mime = mime_type.parse()?;
             let size = UInt::new(tokio::fs::metadata(&path).await?.len());
             let duration = duration_ms.map(|ms| std::time::Duration::from_millis(ms.into()));
@@ -659,17 +666,19 @@ impl SwitchboardCore {
         .await
     }
 
-    /// Replies to `event_id` with a Markdown text message.
+    /// Replies to `event_id` with a Markdown text message; within the
+    /// thread under `thread_root` when the message replied to is in one.
     pub async fn send_reply(
         &self,
         room_id: String,
         body: String,
         event_id: String,
         mentions: Vec<String>,
+        thread_root: Option<String>,
     ) -> Result<()> {
         let inner = self.inner.clone();
         runtime::run(async move {
-            let timeline = inner.timeline(&room_id).await?;
+            let timeline = inner.timeline_in(&room_id, thread_root.as_deref()).await?;
             let content =
                 RoomMessageEventContentWithoutRelation::text_markdown(body).add_mentions(mentions_of(&mentions)?);
             timeline.send_reply(content, OwnedEventId::try_from(event_id)?).await?;
@@ -1089,10 +1098,11 @@ impl SwitchboardCore {
         runtime::run(async move {
             inner.timeline(&room_id).await?.mark_as_read(ReceiptType::Read).await?;
             let room = inner.room(&room_id)?;
-            // The timeline shows messages only, so a chat whose unread
-            // notification is a join or an invite stays unread; read up to
-            // the server's newest event then.
-            if room.num_unread_notifications() > 0 {
+            // The timeline shows messages only, and none of the replies in
+            // threads, so a chat whose unread is a join, an invite or a
+            // reply in a thread stays unread; read up to the server's
+            // newest event then.
+            if room.num_unread_notifications() > 0 || room.num_unread_messages() > 0 {
                 read_to_newest(&room).await?;
             }
             // Opening a chat you marked unread clears the mark.
@@ -1229,15 +1239,22 @@ impl Inner {
     }
 
     async fn send_handle(&self, room_id: &str, transaction_id: &str) -> Result<SendHandle> {
-        let timeline = self.timeline(room_id).await?;
-        timeline
-            .items()
-            .await
-            .iter()
-            .filter_map(|item| item.as_event())
-            .find(|e| e.transaction_id().is_some_and(|t| t.as_str() == transaction_id))
-            .and_then(|e| e.local_echo_send_handle())
-            .ok_or_else(|| anyhow!("that message is no longer waiting to send"))
+        // A message sent into a thread waits in that thread's timeline.
+        let mut timelines = vec![self.timeline(room_id).await?];
+        timelines.extend(self.opened_threads(room_id).await);
+        for timeline in timelines {
+            let handle = timeline
+                .items()
+                .await
+                .iter()
+                .filter_map(|item| item.as_event())
+                .find(|e| e.transaction_id().is_some_and(|t| t.as_str() == transaction_id))
+                .and_then(|e| e.local_echo_send_handle());
+            if let Some(handle) = handle {
+                return Ok(handle);
+            }
+        }
+        Err(anyhow!("that message is no longer waiting to send"))
     }
 
     fn room(&self, room_id: &str) -> Result<Room> {
@@ -1251,10 +1268,52 @@ impl Inner {
         if let Some(t) = timelines.get(room.room_id()) {
             return Ok(t.clone());
         }
-        let timeline = room.timeline_builder().event_filter(shown_in_chat).build().await?;
+        // Replies in threads stay out of the chat: they show under the
+        // message that started the thread, from `thread_timeline`.
+        let timeline = room
+            .timeline_builder()
+            .with_focus(TimelineFocus::Live { hide_threaded_events: true })
+            .event_filter(shown_in_chat)
+            .build()
+            .await?;
         let timeline = Arc::new(timeline);
         timelines.insert(room.room_id().to_owned(), timeline.clone());
         Ok(timeline)
+    }
+
+    /// The replies in the thread under `root_id`, kept once opened.
+    async fn thread_timeline(&self, room_id: &str, root_id: &str) -> Result<Arc<Timeline>> {
+        let room = self.room(room_id)?;
+        let root = OwnedEventId::try_from(root_id)?;
+        let key = (room.room_id().to_owned(), root.clone());
+        let mut threads = self.threads.lock().await;
+        if let Some(t) = threads.get(&key) {
+            return Ok(t.clone());
+        }
+        let timeline = room
+            .timeline_builder()
+            .with_focus(TimelineFocus::Thread { root_event_id: root })
+            .event_filter(shown_in_chat)
+            .build()
+            .await?;
+        let timeline = Arc::new(timeline);
+        threads.insert(key, timeline.clone());
+        Ok(timeline)
+    }
+
+    /// The timeline to send into: the thread's with a `thread_root`, else
+    /// the chat's.
+    async fn timeline_in(&self, room_id: &str, thread_root: Option<&str>) -> Result<Arc<Timeline>> {
+        match thread_root {
+            Some(root) => self.thread_timeline(room_id, root).await,
+            None => self.timeline(room_id).await,
+        }
+    }
+
+    /// The timelines of the room's threads that have been opened.
+    async fn opened_threads(&self, room_id: &str) -> Vec<Arc<Timeline>> {
+        let threads = self.threads.lock().await;
+        threads.iter().filter(|((room, _), _)| room.as_str() == room_id).map(|(_, t)| t.clone()).collect()
     }
 
     /// The timeline around `event_id`. One is kept per room: asking for
@@ -1273,7 +1332,7 @@ impl Inner {
             .with_focus(TimelineFocus::Event {
                 target: target.clone(),
                 num_context_events: 30,
-                thread_mode: TimelineEventFocusThreadMode::Automatic { hide_threaded_events: false },
+                thread_mode: TimelineEventFocusThreadMode::Automatic { hide_threaded_events: true },
             })
             .event_filter(shown_in_chat)
             .build()
@@ -1284,17 +1343,32 @@ impl Inner {
     }
 
     /// The timeline holding the item `id` (an event or transaction ID): the
-    /// focused one if it's there, otherwise the live one.
+    /// focused one or an opened thread's if it's there, otherwise the live
+    /// one.
     async fn timeline_with(&self, room_id: &str, id: &str) -> Result<Arc<Timeline>> {
-        if let (Ok(event_id), Ok(room)) = (EventId::parse(id), self.room(room_id)) {
-            let focused = self.focused.lock().await.get(room.room_id()).map(|(_, t)| t.clone());
-            if let Some(t) = focused {
-                if t.item_by_event_id(&event_id).await.is_some() {
-                    return Ok(t);
-                }
+        let live = self.timeline(room_id).await?;
+        let room = self.room(room_id)?;
+        let mut others: Vec<_> = self.focused.lock().await.get(room.room_id()).map(|(_, t)| t.clone()).into_iter().collect();
+        others.extend(self.opened_threads(room_id).await);
+        if others.is_empty() {
+            return Ok(live);
+        }
+        let holds = |items: &eyeball_im::Vector<Arc<matrix_sdk_ui::timeline::TimelineItem>>| {
+            items.iter().filter_map(|item| item.as_event()).any(|e| {
+                e.event_id().is_some_and(|e| e.as_str() == id) || e.transaction_id().is_some_and(|t| t.as_str() == id)
+            })
+        };
+        // The message that starts a thread is in both; the chat's has it
+        // with its reactions and edits as the chat shows them.
+        if holds(&live.items().await) {
+            return Ok(live);
+        }
+        for t in others {
+            if holds(&t.items().await) {
+                return Ok(t);
             }
         }
-        self.timeline(room_id).await
+        Ok(live)
     }
 
     async fn room_diff(self: &Arc<Self>, diff: VectorDiff<RoomListItem>) -> RoomListDiff {
@@ -1811,6 +1885,27 @@ fn parse_bridge_state(json: &str) -> Option<Network> {
     })
 }
 
+/// Sends a timeline to Dart: a `Reset` with what it holds, then batches of
+/// changes until Dart stops listening.
+fn stream_timeline(timeline: Arc<Timeline>, sink: StreamSink<Vec<TimelineDiff>>) {
+    runtime::spawn(async move {
+        let (items, stream) = timeline.subscribe().await;
+        let reset = TimelineDiff::Reset {
+            values: items.iter().map(|i| convert::timeline_item(i)).collect(),
+        };
+        if sink.add(vec![reset]).is_err() {
+            return;
+        }
+        pin_mut!(stream);
+        while let Some(diffs) = stream.next().await {
+            let out = diffs.into_iter().map(timeline_diff).collect();
+            if sink.add(out).is_err() {
+                break;
+            }
+        }
+    });
+}
+
 fn timeline_diff(diff: VectorDiff<Arc<matrix_sdk_ui::timeline::TimelineItem>>) -> TimelineDiff {
     let c = |i: Arc<matrix_sdk_ui::timeline::TimelineItem>| convert::timeline_item(&i);
     match diff {
@@ -1974,7 +2069,7 @@ mod tests {
         let pid = std::process::id();
         let me = core.user_id();
         let body = format!("core round trip {pid} **bold** [me](https://matrix.to/#/{me})");
-        core.send_text(room_id.clone(), body.clone(), vec![me.clone()]).await.expect("send");
+        core.send_text(room_id.clone(), body.clone(), vec![me.clone()], None).await.expect("send");
         let original = wait_for(&core, &room_id, deadline, move |e| {
             (e.content().as_message()?.body() == body).then(|| e.event_id().map(|id| id.to_string()))?
         })
@@ -1994,7 +2089,7 @@ mod tests {
         assert_eq!(content["m.mentions"]["user_ids"][0].as_str(), Some(me.as_str()), "{content}");
 
         let reply = format!("core reply {pid}");
-        core.send_reply(room_id.clone(), reply.clone(), original.clone(), vec![]).await.expect("reply");
+        core.send_reply(room_id.clone(), reply.clone(), original.clone(), vec![], None).await.expect("reply");
         let want = original.clone();
         wait_for(&core, &room_id, deadline, move |e| {
             let m = e.content().as_msglike()?;
@@ -2091,7 +2186,7 @@ mod tests {
 
         let pid = std::process::id();
         let word = format!("zebrafish{pid}");
-        core.send_text(room_id.clone(), format!("index probe {word}"), vec![]).await.expect("send");
+        core.send_text(room_id.clone(), format!("index probe {word}"), vec![], None).await.expect("send");
         let find = |q: String| {
             let core = &core;
             let room_id = room_id.clone();
@@ -2178,7 +2273,7 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
 
-        core.send_file(room_id.clone(), path.to_string_lossy().into_owned(), "image/png".into(), Some(2), Some(2), None, false)
+        core.send_file(room_id.clone(), path.to_string_lossy().into_owned(), "image/png".into(), Some(2), Some(2), None, false, None)
             .await
             .expect("send photo");
         let image_name = name.clone();
@@ -2213,7 +2308,7 @@ mod tests {
         let pid = std::process::id();
         let voice = dir.join(format!("voice-{pid}.wav"));
         std::fs::write(&voice, include_bytes!("../../tests/fixtures/beep.wav")).unwrap();
-        core.send_file(room_id.clone(), voice.to_string_lossy().into_owned(), "audio/wav".into(), None, None, Some(500), true)
+        core.send_file(room_id.clone(), voice.to_string_lossy().into_owned(), "audio/wav".into(), None, None, Some(500), true, None)
             .await
             .expect("send voice");
         let voice_name = format!("voice-{pid}.wav");
@@ -2229,7 +2324,7 @@ mod tests {
 
         let notes = dir.join(format!("notes-{pid}.txt"));
         std::fs::write(&notes, "hello").unwrap();
-        core.send_file(room_id.clone(), notes.to_string_lossy().into_owned(), "text/plain".into(), None, None, None, false)
+        core.send_file(room_id.clone(), notes.to_string_lossy().into_owned(), "text/plain".into(), None, None, None, false, None)
             .await
             .expect("send file");
         let notes_name = format!("notes-{pid}.txt");
@@ -2451,6 +2546,106 @@ mod tests {
     }
 
     /// Polls the room's timeline until `check` finds something.
+    /// Replies sent into a thread stay out of the chat, show in the thread
+    /// and are counted on the message that started it.
+    ///   SB_TEST_USER=... SB_TEST_PASSWORD=... SB_TEST_ROOM=... cargo test --lib -- --ignored live_thread
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore]
+    async fn live_thread_round_trip() {
+        use std::time::{Duration, Instant};
+
+        let server = std::env::var("SB_TEST_SERVER")
+            .unwrap_or_else(|_| "https://switchboard.example.ts.net".into());
+        let user = std::env::var("SB_TEST_USER").expect("SB_TEST_USER");
+        let password = std::env::var("SB_TEST_PASSWORD").expect("SB_TEST_PASSWORD");
+        let room_id = std::env::var("SB_TEST_ROOM").expect("SB_TEST_ROOM");
+        let dir = std::env::temp_dir().join(format!("sb-core-test-thread-{}", std::process::id()));
+
+        let core = SwitchboardCore::login(
+            server,
+            user,
+            password,
+            "switchboard-core test".into(),
+            dir.to_string_lossy().into_owned(),
+            "test passphrase".into(),
+        )
+        .await
+        .expect("login");
+        core.start_sync().await.expect("sync");
+
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while core.inner.room(&room_id).is_err() {
+            assert!(Instant::now() < deadline, "room never synced");
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+
+        let pid = std::process::id();
+        let body = format!("core thread start {pid}");
+        core.send_text(room_id.clone(), body.clone(), vec![], None).await.expect("send");
+        let root = wait_for(&core, &room_id, deadline, move |e| {
+            (e.content().as_message()?.body() == body).then(|| e.event_id().map(|id| id.to_string()))?
+        })
+        .await
+        .expect("message never got an event ID from the server");
+
+        let replies = [format!("core thread reply one {pid}"), format!("core thread reply two {pid}")];
+        for reply in &replies {
+            core.send_text(room_id.clone(), reply.clone(), vec![], Some(root.clone())).await.expect("reply in thread");
+        }
+
+        // The thread has the message that started it and both replies, in
+        // order, each pointing at the start.
+        let inner = core.inner.clone();
+        let (rid, id, want) = (room_id.clone(), root.clone(), replies.clone());
+        let in_thread = runtime::run(async move {
+            let thread = inner.thread_timeline(&rid, &id).await.unwrap();
+            loop {
+                let items: Vec<EventItem> =
+                    thread.items().await.iter().filter_map(|i| i.as_event()).map(convert_event_for_test).collect();
+                let sent: Vec<&EventItem> =
+                    items.iter().filter(|e| e.event_id.is_some() && e.thread_root.as_deref() == Some(&id)).collect();
+                let texts: Vec<String> = sent
+                    .iter()
+                    .filter_map(|e| match &e.body {
+                        EventBody::Text { body, .. } => Some(body.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                if texts == want {
+                    return Ok(items.len());
+                }
+                if Instant::now() > deadline {
+                    return Err(format!("{items:?}"));
+                }
+                tokio::time::sleep(Duration::from_millis(200)).await;
+            }
+        })
+        .await;
+        in_thread.expect("the thread never held both replies");
+
+        // The chat counts them on the message and shows neither.
+        let (id, last) = (root.clone(), replies[1].clone());
+        wait_for(&core, &room_id, deadline, move |e| {
+            let shown = convert_event_for_test(e);
+            let thread = shown.thread?;
+            (e.event_id()?.as_str() == id && thread.reply_count == 2 && thread.latest_text.as_deref() == Some(&last))
+                .then_some(())
+        })
+        .await
+        .expect("the message never showed its two replies");
+        let inner = core.inner.clone();
+        let rid = room_id.clone();
+        let in_chat = runtime::run(async move {
+            let items = inner.timeline(&rid).await.unwrap().items().await;
+            items.iter().filter_map(|i| i.as_event()).filter(|e| e.content().thread_root().is_some()).count()
+        })
+        .await;
+        assert_eq!(in_chat, 0, "replies in a thread showed in the chat");
+
+        core.logout().await.expect("logout");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     async fn wait_for<T: Send + 'static>(
         core: &SwitchboardCore,
         room_id: &str,

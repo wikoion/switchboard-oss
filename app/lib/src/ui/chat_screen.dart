@@ -37,8 +37,11 @@ import 'widgets/connection_banner.dart';
 const _quickReactions = ['❤️', '👍', '😂', '😮', '😢', '🙏'];
 
 class ChatScreen extends ConsumerStatefulWidget {
-  const ChatScreen({super.key, required this.roomId, this.focusEventId});
+  const ChatScreen({super.key, required this.roomId, this.focusEventId, this.openThreadId});
   final String roomId;
+
+  /// The message whose thread is open from the start.
+  final String? openThreadId;
 
   /// Opens the chat at this message (a search result) instead of the end.
   final String? focusEventId;
@@ -53,6 +56,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _focus = FocusNode();
   EventItem? _replyTo;
   EventItem? _editing;
+
+  /// Threads open under the message that started them, by its event ID.
+  late final _openThreads = <String>{?widget.openThreadId};
+
+  /// The thread the composer sends into: the message that started it and
+  /// its text. It stays until the banner is closed, so nobody has to choose
+  /// the thread again for each message.
+  ({String rootId, String preview})? _thread;
 
   /// Mentions chosen in the composer: display name to user ID.
   final _mentions = <String, String>{};
@@ -216,17 +227,57 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   void _clearCompose() {
     if (_editing != null) _text.clear();
     setState(() {
+      // Closing a reply or an edit made inside a thread leaves the thread.
+      if (_replyTo == null && _editing == null) _thread = null;
       _replyTo = null;
       _editing = null;
     });
   }
 
+  void _toggleThread(String rootId) {
+    setState(() {
+      if (_openThreads.add(rootId)) return;
+      _openThreads.remove(rootId);
+      if (_thread?.rootId == rootId) _thread = null;
+    });
+  }
+
+  /// Opens the thread [e] started or is in and points the composer at it.
+  void _startThreadReply(EventItem e) {
+    final rootId = e.threadRoot ?? e.eventId;
+    if (rootId == null) return;
+    var root = e.threadRoot == null ? e : null;
+    for (final item in ref.read(timelineProvider(widget.roomId)).items ?? const <TimelineItem>[]) {
+      if (item.kind case TimelineItemKind_Event(field0: final other) when other.eventId == rootId) root = other;
+    }
+    setState(() {
+      _openThreads.add(rootId);
+      _thread = (rootId: rootId, preview: (root == null ? null : messageText(root)) ?? 'Message');
+      if (_editing != null) _text.clear();
+      _editing = null;
+      _replyTo = null;
+    });
+    _focus.requestFocus();
+  }
+
+  Future<void> _sendFile(String path, String mimeType, {int? width, int? height, int? durationMs, bool isVoice = false}) =>
+      _timeline.sendFile(
+        path,
+        mimeType,
+        width: width,
+        height: height,
+        durationMs: durationMs,
+        isVoice: isVoice,
+        threadRoot: _thread?.rootId,
+      );
+
   Future<void> _send(String body) {
     _stopTyping();
-    // What's sent shows at the end.
-    _goLive();
     final editing = _editing;
     final replyTo = _replyTo;
+    final thread = replyTo?.threadRoot ?? _thread?.rootId;
+    // What's sent shows at the end; in a thread, under its message.
+    if (thread == null) _goLive();
     final mentioned = applyMentions(body, _mentions);
     setState(() {
       _editing = null;
@@ -236,9 +287,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     });
     if (editing != null) return _timeline.edit(editing.eventId ?? editing.transactionId!, mentioned.markdown);
     if (replyTo?.eventId != null) {
-      return _timeline.reply(mentioned.markdown, replyTo!.eventId!, mentions: mentioned.userIds);
+      return _timeline.reply(mentioned.markdown, replyTo!.eventId!, mentions: mentioned.userIds, threadRoot: thread);
     }
-    return _timeline.send(mentioned.markdown, mentions: mentioned.userIds);
+    return _timeline.send(mentioned.markdown, mentions: mentioned.userIds, threadRoot: thread);
   }
 
   void _chooseMention(Member m) {
@@ -306,20 +357,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           await _run(() async {
             final bytes = await f.readAsBytes();
             final image = await decodeImageFromList(bytes);
-            await _timeline.sendFile(f.path, f.mimeType ?? mimeFor(f.path), width: image.width, height: image.height);
+            await _sendFile(f.path, f.mimeType ?? mimeFor(f.path), width: image.width, height: image.height);
             image.dispose();
           }, "Couldn't send photo");
         }
       case _Attach.video:
         final f = await picker.pickVideo(source: ImageSource.gallery);
         if (f != null) {
-          await _run(() => _timeline.sendFile(f.path, f.mimeType ?? mimeFor(f.path)), "Couldn't send video");
+          await _run(() => _sendFile(f.path, f.mimeType ?? mimeFor(f.path)), "Couldn't send video");
         }
       case _Attach.file:
         final picked = await FilePicker.pickFiles();
         for (final f in picked) {
           final path = f.path;
-          if (path != null) await _run(() => _timeline.sendFile(path, mimeFor(path)), "Couldn't send file");
+          if (path != null) await _run(() => _sendFile(path, mimeFor(path)), "Couldn't send file");
         }
     }
   }
@@ -358,11 +409,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       if (mime.startsWith('image/')) {
         await _run(() async {
           final image = await decodeImageFromList(await File(path).readAsBytes());
-          await _timeline.sendFile(path, mime, width: image.width, height: image.height);
+          await _sendFile(path, mime, width: image.width, height: image.height);
           image.dispose();
         }, "Couldn't send photo");
       } else {
-        await _run(() => _timeline.sendFile(path, mime), "Couldn't send file");
+        await _run(() => _sendFile(path, mime), "Couldn't send file");
       }
     }
   }
@@ -428,7 +479,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       await File(path).delete().catchError((_) => File(path));
       return;
     }
-    await _run(() => _timeline.sendFile(path, 'audio/mp4', durationMs: ms, isVoice: true), "Couldn't send voice note");
+    await _run(() => _sendFile(path, 'audio/mp4', durationMs: ms, isVoice: true), "Couldn't send voice note");
   }
 
   Future<void> _run(Future<void> Function() action, String failed) async {
@@ -458,7 +509,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     return (
       reactions: e.eventId != null && supports(features, (f) => f.reaction) ? reactions : const [],
       sendAgain: undelivered && text != null
-          ? _Action(Icons.send_rounded, 'Send again', () => _run(() => _timeline.send(text), "Couldn't send"))
+          ? _Action(Icons.send_rounded, 'Send again',
+              () => _run(() => _timeline.send(text, threadRoot: e.threadRoot), "Couldn't send"))
           : null,
       rest: [
         if (failed && e.transactionId != null) ...[
@@ -468,6 +520,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ],
         if (e.canReply && e.eventId != null && supports(features, (f) => f.reply))
           _Action(Icons.reply_rounded, 'Reply', () => _startReply(e)),
+        if (e.canReply && e.eventId != null && hasThreads(features))
+          _Action(Icons.forum_outlined, 'Reply in thread', () => _startThreadReply(e)),
         if (e.isOwn && e.canEdit && text != null && supports(features, (f) => f.edit))
           _Action(Icons.edit_outlined, 'Edit', () => _startEdit(e)),
         if (text != null) _Action(Icons.copy_rounded, 'Copy', () => Clipboard.setData(ClipboardData(text: text))),
@@ -826,7 +880,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   Widget? _composeBanner() {
     final e = _editing ?? _replyTo;
-    if (e == null) return null;
+    if (e == null) {
+      final thread = _thread;
+      if (thread == null) return null;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Replying in thread', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          Text(
+            thread.preview,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+        ],
+      );
+    }
     final title = _editing != null
         ? 'Editing message'
         : 'Replying to ${e.isOwn ? 'yourself' : (e.senderName ?? e.sender)}';
@@ -886,22 +955,85 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           },
           delivery: delivery,
           onActions: ([at]) => _showActions(event, delivery: delivery, at: at),
-          onSwipeReply: event.canReply && event.eventId != null && supports(features, (f) => f.reply)
-              ? () => _startReply(event)
-              : null,
+          onSwipeReply: _swipeReply(event, features),
         );
-        if (_focusEvent == null || event.eventId != _focusEvent) return row;
-        final lit = _highlight == event.eventId;
-        return AnimatedContainer(
-          key: _focusRowKey,
-          duration: const Duration(milliseconds: 600),
-          decoration: BoxDecoration(
-            color: lit ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.14) : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: row,
+        Widget shown = row;
+        if (_focusEvent != null && event.eventId == _focusEvent) {
+          final lit = _highlight == event.eventId;
+          shown = AnimatedContainer(
+            key: _focusRowKey,
+            duration: const Duration(milliseconds: 600),
+            decoration: BoxDecoration(
+              color: lit ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.14) : Colors.transparent,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: row,
+          );
+        }
+        // A thread hangs under the message that started it: a line saying
+        // how many replies, which opens them in place.
+        final rootId = event.eventId;
+        final open = rootId != null && _openThreads.contains(rootId);
+        if (rootId == null || (event.thread == null && !open)) return shown;
+        return Column(
+          key: ValueKey('thread-${item.uniqueId}'),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            shown,
+            _ThreadLine(
+              summary: event.thread,
+              open: open,
+              own: event.isOwn,
+              indent: isGroup && !event.isOwn ? 42 : 0,
+              onTap: () => _toggleThread(rootId),
+            ),
+            if (open)
+              _ThreadReplies(
+                roomId: widget.roomId,
+                rootId: rootId,
+                rowBuilder: (replies, i, reports) => _threadRow(replies, i, reports, features),
+                onReply: hasThreads(features) ? () => _startThreadReply(event) : null,
+              ),
+          ],
         );
     }
+  }
+
+  /// What a swipe on a message starts: a reply, or where the network has
+  /// only threads (Slack), a reply in the message's thread.
+  VoidCallback? _swipeReply(EventItem event, RoomFeatures? features) {
+    if (!event.canReply || event.eventId == null) return null;
+    if (supports(features, (f) => f.reply)) return () => _startReply(event);
+    return hasThreads(features) ? () => _startThreadReply(event) : null;
+  }
+
+  /// One reply in an open thread.
+  Widget _threadRow(List<EventItem> replies, int i, Map<String, Delivery> reports, RoomFeatures? features) {
+    final event = replies[i];
+    bool sameGroup(EventItem? other) =>
+        other != null &&
+        other.sender == event.sender &&
+        (other.timestampMs - event.timestampMs).abs() < 5 * 60 * 1000;
+    final older = i > 0 ? replies[i - 1] : null;
+    final newer = i + 1 < replies.length ? replies[i + 1] : null;
+    final delivery = event.eventId == null ? null : reports[event.eventId];
+    return _MessageRow(
+      key: ValueKey('reply-${event.eventId ?? event.transactionId}'),
+      roomId: widget.roomId,
+      event: event,
+      showSender: !event.isOwn && !sameGroup(older),
+      showAvatar: !event.isOwn && !sameGroup(newer),
+      isGroup: true,
+      firstInGroup: !sameGroup(older),
+      lastInGroup: !sameGroup(newer),
+      onReact: (key) {
+        final id = event.eventId;
+        if (id != null) _run(() => _timeline.react(id, key), "Couldn't react");
+      },
+      delivery: delivery,
+      onActions: ([at]) => _showActions(event, delivery: delivery, at: at),
+      onSwipeReply: _swipeReply(event, features),
+    );
   }
 
   /// The nearest shown message in direction [step], skipping hidden items;
@@ -919,6 +1051,128 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       }
     }
     return null;
+  }
+}
+
+/// The line under a message that started a thread: how many replies and
+/// the newest of them. Tapping it opens or closes the replies in place.
+class _ThreadLine extends StatelessWidget {
+  const _ThreadLine({
+    required this.summary,
+    required this.open,
+    required this.own,
+    required this.indent,
+    required this.onTap,
+  });
+
+  /// Null for a thread just started here, before its first reply is in.
+  final ThreadSummary? summary;
+  final bool open;
+  final bool own;
+  final double indent;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final t = summary;
+    final count = t == null
+        ? 'Thread'
+        : t.replyCount == 1
+            ? '1 reply'
+            : '${t.replyCount} replies';
+    final latest = t?.latestText == null ? null : [?t!.latestSenderName, t.latestText!].join(': ');
+    return Align(
+      alignment: own ? Alignment.centerRight : Alignment.centerLeft,
+      child: Padding(
+        padding: EdgeInsets.only(left: indent, top: 2),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.forum_outlined, size: 15, color: scheme.primary),
+                const SizedBox(width: 6),
+                Text(count, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: scheme.primary)),
+                if (latest != null && !open)
+                  Flexible(
+                    child: Text(
+                      '  $latest',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+                    ),
+                  ),
+                Icon(
+                  open ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                  size: 18,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// An open thread's replies, set in from the chat beside a rule, with a
+/// button to write in the thread.
+class _ThreadReplies extends ConsumerWidget {
+  const _ThreadReplies({required this.roomId, required this.rootId, required this.rowBuilder, this.onReply});
+  final String roomId;
+  final String rootId;
+  final Widget Function(List<EventItem> replies, int index, Map<String, Delivery> reports) rowBuilder;
+
+  /// Null where the network has no threads to write in.
+  final VoidCallback? onReply;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final key = (roomId: roomId, rootId: rootId);
+    final thread = ref.watch(threadProvider(key));
+    final items = thread.items;
+    final replies = [
+      for (final e in threadReplies(items ?? const [], rootId))
+        if (e.body is! EventBody_SendStatus) e,
+    ];
+    final reports = items == null ? const <String, Delivery>{} : deliveries(items);
+    return Padding(
+      padding: const EdgeInsets.only(left: 16, top: 2, bottom: 6),
+      child: DecoratedBox(
+        decoration: BoxDecoration(border: Border(left: BorderSide(color: scheme.outlineVariant, width: 2))),
+        child: Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (items == null || (thread.paginating && replies.isEmpty))
+                const Padding(
+                  padding: EdgeInsets.all(8),
+                  child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                )
+              else if (!thread.atStart && !thread.paginating)
+                TextButton(
+                  onPressed: () => ref.read(threadProvider(key).notifier).loadOlder(),
+                  child: const Text('Show earlier replies'),
+                ),
+              for (var i = 0; i < replies.length; i++) rowBuilder(replies, i, reports),
+              if (onReply != null)
+                TextButton.icon(
+                  onPressed: onReply,
+                  icon: const Icon(Icons.reply_rounded, size: 18),
+                  label: const Text('Reply in thread'),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

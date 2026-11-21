@@ -119,9 +119,10 @@ class TimelineNotifier extends Notifier<TimelineState> {
     }
   }
 
-  /// Sends Markdown text. [mentions] are the user IDs it links to.
-  Future<void> send(String body, {List<String> mentions = const []}) =>
-      ref.read(coreProvider).sendText(roomId: roomId, body: body, mentions: mentions);
+  /// Sends Markdown text. [mentions] are the user IDs it links to. With
+  /// [threadRoot] it goes into the thread under that message.
+  Future<void> send(String body, {List<String> mentions = const [], String? threadRoot}) =>
+      ref.read(coreProvider).sendText(roomId: roomId, body: body, mentions: mentions, threadRoot: threadRoot);
 
   /// Uploads and sends a file; photos when [mimeType] is an image.
   Future<void> sendFile(
@@ -131,6 +132,7 @@ class TimelineNotifier extends Notifier<TimelineState> {
     int? height,
     int? durationMs,
     bool isVoice = false,
+    String? threadRoot,
   }) =>
       ref.read(coreProvider).sendFile(
             roomId: roomId,
@@ -140,10 +142,13 @@ class TimelineNotifier extends Notifier<TimelineState> {
             height: height,
             durationMs: durationMs,
             isVoice: isVoice,
+            threadRoot: threadRoot,
           );
 
-  Future<void> reply(String body, String eventId, {List<String> mentions = const []}) =>
-      ref.read(coreProvider).sendReply(roomId: roomId, body: body, eventId: eventId, mentions: mentions);
+  /// Replies to a message; inside [threadRoot]'s thread when it is in one.
+  Future<void> reply(String body, String eventId, {List<String> mentions = const [], String? threadRoot}) => ref
+      .read(coreProvider)
+      .sendReply(roomId: roomId, body: body, eventId: eventId, mentions: mentions, threadRoot: threadRoot);
 
   /// [id] is the event ID, or the transaction ID while still sending.
   Future<void> edit(String id, String body) =>
@@ -208,6 +213,57 @@ class FocusedTimelineNotifier extends Notifier<TimelineState> {
         : state.copyWith(paginating: false, atStart: reached);
   }
 }
+
+/// One thread: the chat and the message that started it.
+typedef ThreadKey = ({String roomId, String rootId});
+
+/// The replies in a thread, oldest first, while it is open under its
+/// message. The message that started it is among the items once the start
+/// is reached; [threadReplies] leaves it out.
+final threadProvider = NotifierProvider.autoDispose.family<ThreadNotifier, TimelineState, ThreadKey>(
+  ThreadNotifier.new,
+);
+
+class ThreadNotifier extends Notifier<TimelineState> {
+  ThreadNotifier(this.key);
+
+  final ThreadKey key;
+
+  @override
+  TimelineState build() {
+    final core = ref.watch(coreProvider);
+    final sub = core.subscribeThread(roomId: key.roomId, rootId: key.rootId).listen(
+      (diffs) => state = state.copyWith(items: applyTimelineDiffs(state.items ?? const [], diffs)),
+      onError: (Object _) => state = state.copyWith(items: state.items ?? const [], atStart: true),
+    );
+    ref.onDispose(sub.cancel);
+    // A thread opens empty: its replies are fetched, newest first.
+    Future.microtask(loadOlder);
+    return const TimelineState();
+  }
+
+  Future<void> loadOlder() async {
+    if (state.paginating || state.atStart) return;
+    state = state.copyWith(paginating: true);
+    var reached = false;
+    try {
+      reached = await ref.read(coreProvider).paginateThread(roomId: key.roomId, rootId: key.rootId, count: 30);
+    } catch (_) {
+      // Left to "Show earlier replies".
+    }
+    if (!ref.mounted) return;
+    state = state.copyWith(paginating: false, atStart: reached);
+  }
+}
+
+/// A thread's replies: its events without the message that started it.
+List<EventItem> threadReplies(List<TimelineItem> items, String rootId) => [
+      for (final item in items)
+        if (item.kind case TimelineItemKind_Event(field0: final e) when e.eventId != rootId) e,
+    ];
+
+/// Whether the network keeps replies in threads under a message.
+bool hasThreads(RoomFeatures? f) => f != null && f.thread > 0;
 
 /// The plain text of a message, for copying, editing and reply banners.
 String? messageText(EventItem e) => switch (e.body) {

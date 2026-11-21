@@ -76,7 +76,11 @@ final routerProvider = Provider<GoRouter>((ref) {
                 // ?event= opens the chat at that message, from search.
                 pageBuilder: (_, s) => _page(
                   s,
-                  ChatScreen(roomId: s.pathParameters['id']!, focusEventId: s.uri.queryParameters['event']),
+                  ChatScreen(
+                    roomId: s.pathParameters['id']!,
+                    focusEventId: s.uri.queryParameters['event'],
+                    openThreadId: s.uri.queryParameters['thread'],
+                  ),
                 ),
                 routes: [
                   GoRoute(

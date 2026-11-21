@@ -142,6 +142,21 @@ pub struct EventItem {
     pub unresolved_media: Option<String>,
     /// The original on the network, such as the reel's page.
     pub external_url: Option<String>,
+    /// The replies under this message, when it started a thread.
+    pub thread: Option<ThreadSummary>,
+    /// The message whose thread this one is a reply in.
+    pub thread_root: Option<String>,
+}
+
+/// The replies in a thread, for the line under the message that started it.
+#[derive(Clone, Debug)]
+pub struct ThreadSummary {
+    pub reply_count: u32,
+    /// Who wrote the newest reply, what it says and when. None until the
+    /// reply is loaded.
+    pub latest_sender_name: Option<String>,
+    pub latest_text: Option<String>,
+    pub latest_timestamp_ms: Option<i64>,
 }
 
 /// A link's Open Graph preview, from the bridge or from Synapse.
@@ -201,6 +216,8 @@ pub enum BridgeStatus {
 #[derive(Clone, Debug)]
 pub struct RoomFeatures {
     pub reply: i32,
+    /// Replies kept under the message they answer, as Slack has them.
+    pub thread: i32,
     pub edit: i32,
     pub delete: i32,
     pub reaction: i32,

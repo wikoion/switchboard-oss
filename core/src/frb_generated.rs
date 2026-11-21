@@ -41,7 +41,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1579991437;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1247657231;
 
 // Section: executor
 
@@ -1988,6 +1988,70 @@ fn wire__crate__api__client__SwitchboardCore_paginate_focused_impl(
         },
     )
 }
+fn wire__crate__api__client__SwitchboardCore_paginate_thread_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "SwitchboardCore_paginate_thread",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SwitchboardCore>,
+            >>::sse_decode(&mut deserializer);
+            let api_room_id = <String>::sse_decode(&mut deserializer);
+            let api_root_id = <String>::sse_decode(&mut deserializer);
+            let api_count = <u16>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, false,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let api_that_guard = api_that_guard.unwrap();
+                        let output_ok = crate::api::client::SwitchboardCore::paginate_thread(
+                            &*api_that_guard,
+                            api_room_id,
+                            api_root_id,
+                            api_count,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__client__SwitchboardCore_redact_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -2447,6 +2511,7 @@ fn wire__crate__api__client__SwitchboardCore_send_file_impl(
             let api_height = <Option<u32>>::sse_decode(&mut deserializer);
             let api_duration_ms = <Option<u32>>::sse_decode(&mut deserializer);
             let api_is_voice = <bool>::sse_decode(&mut deserializer);
+            let api_thread_root = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
@@ -2477,6 +2542,7 @@ fn wire__crate__api__client__SwitchboardCore_send_file_impl(
                             api_height,
                             api_duration_ms,
                             api_is_voice,
+                            api_thread_root,
                         )
                         .await?;
                         std::result::Result::Ok(output_ok)
@@ -2516,6 +2582,7 @@ fn wire__crate__api__client__SwitchboardCore_send_reply_impl(
             let api_body = <String>::sse_decode(&mut deserializer);
             let api_event_id = <String>::sse_decode(&mut deserializer);
             let api_mentions = <Vec<String>>::sse_decode(&mut deserializer);
+            let api_thread_root = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
@@ -2543,6 +2610,7 @@ fn wire__crate__api__client__SwitchboardCore_send_reply_impl(
                             api_body,
                             api_event_id,
                             api_mentions,
+                            api_thread_root,
                         )
                         .await?;
                         std::result::Result::Ok(output_ok)
@@ -2581,6 +2649,7 @@ fn wire__crate__api__client__SwitchboardCore_send_text_impl(
             let api_room_id = <String>::sse_decode(&mut deserializer);
             let api_body = <String>::sse_decode(&mut deserializer);
             let api_mentions = <Vec<String>>::sse_decode(&mut deserializer);
+            let api_thread_root = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
@@ -2607,6 +2676,7 @@ fn wire__crate__api__client__SwitchboardCore_send_text_impl(
                             api_room_id,
                             api_body,
                             api_mentions,
+                            api_thread_root,
                         )
                         .await?;
                         std::result::Result::Ok(output_ok)
@@ -3533,6 +3603,73 @@ fn wire__crate__api__client__SwitchboardCore_subscribe_sync_status_impl(
         },
     )
 }
+fn wire__crate__api__client__SwitchboardCore_subscribe_thread_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "SwitchboardCore_subscribe_thread",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SwitchboardCore>,
+            >>::sse_decode(&mut deserializer);
+            let api_room_id = <String>::sse_decode(&mut deserializer);
+            let api_root_id = <String>::sse_decode(&mut deserializer);
+            let api_sink = <StreamSink<
+                Vec<crate::api::types::TimelineDiff>,
+                flutter_rust_bridge::for_generated::SseCodec,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || async move {
+                        let mut api_that_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_that, 0, false,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_that_guard =
+                                        Some(api_that.lockable_decode_async_ref().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let api_that_guard = api_that_guard.unwrap();
+                        let output_ok = crate::api::client::SwitchboardCore::subscribe_thread(
+                            &*api_that_guard,
+                            api_room_id,
+                            api_root_id,
+                            api_sink,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__client__SwitchboardCore_subscribe_timeline_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -4316,6 +4453,8 @@ impl SseDecode for crate::api::types::EventItem {
             <Option<crate::api::types::LinkPreview>>::sse_decode(deserializer);
         let mut var_unresolvedMedia = <Option<String>>::sse_decode(deserializer);
         let mut var_externalUrl = <Option<String>>::sse_decode(deserializer);
+        let mut var_thread = <Option<crate::api::types::ThreadSummary>>::sse_decode(deserializer);
+        let mut var_threadRoot = <Option<String>>::sse_decode(deserializer);
         return crate::api::types::EventItem {
             event_id: var_eventId,
             transaction_id: var_transactionId,
@@ -4335,6 +4474,8 @@ impl SseDecode for crate::api::types::EventItem {
             link_preview: var_linkPreview,
             unresolved_media: var_unresolvedMedia,
             external_url: var_externalUrl,
+            thread: var_thread,
+            thread_root: var_threadRoot,
         };
     }
 }
@@ -4785,6 +4926,17 @@ impl SseDecode for Option<crate::api::types::RoomFeatures> {
     }
 }
 
+impl SseDecode for Option<crate::api::types::ThreadSummary> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::types::ThreadSummary>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<u32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -4850,6 +5002,7 @@ impl SseDecode for crate::api::types::RoomFeatures {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_reply = <i32>::sse_decode(deserializer);
+        let mut var_thread = <i32>::sse_decode(deserializer);
         let mut var_edit = <i32>::sse_decode(deserializer);
         let mut var_delete = <i32>::sse_decode(deserializer);
         let mut var_reaction = <i32>::sse_decode(deserializer);
@@ -4864,6 +5017,7 @@ impl SseDecode for crate::api::types::RoomFeatures {
         let mut var_readReceipts = <bool>::sse_decode(deserializer);
         return crate::api::types::RoomFeatures {
             reply: var_reply,
+            thread: var_thread,
             edit: var_edit,
             delete: var_delete,
             reaction: var_reaction,
@@ -5050,6 +5204,22 @@ impl SseDecode for crate::api::types::SyncStatus {
             3 => crate::api::types::SyncStatus::Error,
             4 => crate::api::types::SyncStatus::Terminated,
             _ => unreachable!("Invalid variant for SyncStatus: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::types::ThreadSummary {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_replyCount = <u32>::sse_decode(deserializer);
+        let mut var_latestSenderName = <Option<String>>::sse_decode(deserializer);
+        let mut var_latestText = <Option<String>>::sse_decode(deserializer);
+        let mut var_latestTimestampMs = <Option<i64>>::sse_decode(deserializer);
+        return crate::api::types::ThreadSummary {
+            reply_count: var_replyCount,
+            latest_sender_name: var_latestSenderName,
+            latest_text: var_latestText,
+            latest_timestamp_ms: var_latestTimestampMs,
         };
     }
 }
@@ -5326,172 +5496,184 @@ fn pde_ffi_dispatcher_primary_impl(
             rust_vec_len,
             data_len,
         ),
-        34 => {
+        34 => wire__crate__api__client__SwitchboardCore_paginate_thread_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        35 => {
             wire__crate__api__client__SwitchboardCore_redact_impl(port, ptr, rust_vec_len, data_len)
         }
-        35 => wire__crate__api__client__SwitchboardCore_remove_pusher_impl(
+        36 => wire__crate__api__client__SwitchboardCore_remove_pusher_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        36 => wire__crate__api__client__SwitchboardCore_restore_impl(
+        37 => wire__crate__api__client__SwitchboardCore_restore_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        37 => wire__crate__api__client__SwitchboardCore_retry_send_impl(
+        38 => wire__crate__api__client__SwitchboardCore_retry_send_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        38 => wire__crate__api__client__SwitchboardCore_room_features_impl(
+        39 => wire__crate__api__client__SwitchboardCore_room_features_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        39 => wire__crate__api__client__SwitchboardCore_search_messages_impl(
+        40 => wire__crate__api__client__SwitchboardCore_search_messages_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        40 => wire__crate__api__client__SwitchboardCore_search_server_impl(
+        41 => wire__crate__api__client__SwitchboardCore_search_server_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        41 => wire__crate__api__client__SwitchboardCore_send_file_impl(
+        42 => wire__crate__api__client__SwitchboardCore_send_file_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        42 => wire__crate__api__client__SwitchboardCore_send_reply_impl(
+        43 => wire__crate__api__client__SwitchboardCore_send_reply_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        43 => wire__crate__api__client__SwitchboardCore_send_text_impl(
+        44 => wire__crate__api__client__SwitchboardCore_send_text_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        45 => wire__crate__api__client__SwitchboardCore_set_archived_impl(
+        46 => wire__crate__api__client__SwitchboardCore_set_archived_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        46 => wire__crate__api__client__SwitchboardCore_set_favourite_impl(
+        47 => wire__crate__api__client__SwitchboardCore_set_favourite_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        47 => wire__crate__api__client__SwitchboardCore_set_index_period_impl(
+        48 => wire__crate__api__client__SwitchboardCore_set_index_period_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        48 => wire__crate__api__client__SwitchboardCore_set_low_priority_impl(
+        49 => wire__crate__api__client__SwitchboardCore_set_low_priority_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        49 => wire__crate__api__client__SwitchboardCore_set_marked_unread_impl(
+        50 => wire__crate__api__client__SwitchboardCore_set_marked_unread_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        50 => wire__crate__api__client__SwitchboardCore_set_pusher_impl(
+        51 => wire__crate__api__client__SwitchboardCore_set_pusher_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        51 => wire__crate__api__client__SwitchboardCore_set_typing_impl(
+        52 => wire__crate__api__client__SwitchboardCore_set_typing_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        52 => wire__crate__api__client__SwitchboardCore_space_children_impl(
+        53 => wire__crate__api__client__SwitchboardCore_space_children_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        53 => wire__crate__api__client__SwitchboardCore_start_sync_impl(
+        54 => wire__crate__api__client__SwitchboardCore_start_sync_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        54 => wire__crate__api__client__SwitchboardCore_stop_sync_impl(
+        55 => wire__crate__api__client__SwitchboardCore_stop_sync_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        55 => wire__crate__api__client__SwitchboardCore_subscribe_hub_events_impl(
+        56 => wire__crate__api__client__SwitchboardCore_subscribe_hub_events_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        56 => wire__crate__api__client__SwitchboardCore_subscribe_index_status_impl(
+        57 => wire__crate__api__client__SwitchboardCore_subscribe_index_status_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        57 => wire__crate__api__client__SwitchboardCore_subscribe_room_list_impl(
+        58 => wire__crate__api__client__SwitchboardCore_subscribe_room_list_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        58 => wire__crate__api__client__SwitchboardCore_subscribe_sync_status_impl(
+        59 => wire__crate__api__client__SwitchboardCore_subscribe_sync_status_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        59 => wire__crate__api__client__SwitchboardCore_subscribe_timeline_impl(
+        60 => wire__crate__api__client__SwitchboardCore_subscribe_thread_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        60 => wire__crate__api__client__SwitchboardCore_subscribe_timeline_at_impl(
+        61 => wire__crate__api__client__SwitchboardCore_subscribe_timeline_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        61 => wire__crate__api__client__SwitchboardCore_subscribe_typing_impl(
+        62 => wire__crate__api__client__SwitchboardCore_subscribe_timeline_at_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        62 => wire__crate__api__client__SwitchboardCore_toggle_reaction_impl(
+        63 => wire__crate__api__client__SwitchboardCore_subscribe_typing_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        64 => wire__crate__api__init_app_impl(port, ptr, rust_vec_len, data_len),
+        64 => wire__crate__api__client__SwitchboardCore_toggle_reaction_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        66 => wire__crate__api__init_app_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -5510,10 +5692,10 @@ fn pde_ffi_dispatcher_sync_impl(
             rust_vec_len,
             data_len,
         ),
-        44 => {
+        45 => {
             wire__crate__api__client__SwitchboardCore_session_json_impl(ptr, rust_vec_len, data_len)
         }
-        63 => wire__crate__api__client__SwitchboardCore_user_id_impl(ptr, rust_vec_len, data_len),
+        65 => wire__crate__api__client__SwitchboardCore_user_id_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -5861,6 +6043,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::types::EventItem {
             self.link_preview.into_into_dart().into_dart(),
             self.unresolved_media.into_into_dart().into_dart(),
             self.external_url.into_into_dart().into_dart(),
+            self.thread.into_into_dart().into_dart(),
+            self.thread_root.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -6166,6 +6350,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::types::RoomFeatures {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.reply.into_into_dart().into_dart(),
+            self.thread.into_into_dart().into_dart(),
             self.edit.into_into_dart().into_dart(),
             self.delete.into_into_dart().into_dart(),
             self.reaction.into_into_dart().into_dart(),
@@ -6365,6 +6550,29 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::types::SyncStatus>
     for crate::api::types::SyncStatus
 {
     fn into_into_dart(self) -> crate::api::types::SyncStatus {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::types::ThreadSummary {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.reply_count.into_into_dart().into_dart(),
+            self.latest_sender_name.into_into_dart().into_dart(),
+            self.latest_text.into_into_dart().into_dart(),
+            self.latest_timestamp_ms.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::types::ThreadSummary
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::ThreadSummary>
+    for crate::api::types::ThreadSummary
+{
+    fn into_into_dart(self) -> crate::api::types::ThreadSummary {
         self
     }
 }
@@ -6857,6 +7065,8 @@ impl SseEncode for crate::api::types::EventItem {
         <Option<crate::api::types::LinkPreview>>::sse_encode(self.link_preview, serializer);
         <Option<String>>::sse_encode(self.unresolved_media, serializer);
         <Option<String>>::sse_encode(self.external_url, serializer);
+        <Option<crate::api::types::ThreadSummary>>::sse_encode(self.thread, serializer);
+        <Option<String>>::sse_encode(self.thread_root, serializer);
     }
 }
 
@@ -7219,6 +7429,16 @@ impl SseEncode for Option<crate::api::types::RoomFeatures> {
     }
 }
 
+impl SseEncode for Option<crate::api::types::ThreadSummary> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::types::ThreadSummary>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<u32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -7264,6 +7484,7 @@ impl SseEncode for crate::api::types::RoomFeatures {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i32>::sse_encode(self.reply, serializer);
+        <i32>::sse_encode(self.thread, serializer);
         <i32>::sse_encode(self.edit, serializer);
         <i32>::sse_encode(self.delete, serializer);
         <i32>::sse_encode(self.reaction, serializer);
@@ -7412,6 +7633,16 @@ impl SseEncode for crate::api::types::SyncStatus {
             },
             serializer,
         );
+    }
+}
+
+impl SseEncode for crate::api::types::ThreadSummary {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.reply_count, serializer);
+        <Option<String>>::sse_encode(self.latest_sender_name, serializer);
+        <Option<String>>::sse_encode(self.latest_text, serializer);
+        <Option<i64>>::sse_encode(self.latest_timestamp_ms, serializer);
     }
 }
 

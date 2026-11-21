@@ -142,6 +142,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RoomSummary dco_decode_box_autoadd_room_summary(dynamic raw);
 
   @protected
+  ThreadSummary dco_decode_box_autoadd_thread_summary(dynamic raw);
+
+  @protected
   TimelineItem dco_decode_box_autoadd_timeline_item(dynamic raw);
 
   @protected
@@ -277,6 +280,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RoomFeatures? dco_decode_opt_box_autoadd_room_features(dynamic raw);
 
   @protected
+  ThreadSummary? dco_decode_opt_box_autoadd_thread_summary(dynamic raw);
+
+  @protected
   int? dco_decode_opt_box_autoadd_u_32(dynamic raw);
 
   @protected
@@ -308,6 +314,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SyncStatus dco_decode_sync_status(dynamic raw);
+
+  @protected
+  ThreadSummary dco_decode_thread_summary(dynamic raw);
 
   @protected
   TimelineDiff dco_decode_timeline_diff(dynamic raw);
@@ -452,6 +461,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RoomSummary sse_decode_box_autoadd_room_summary(SseDeserializer deserializer);
+
+  @protected
+  ThreadSummary sse_decode_box_autoadd_thread_summary(
+    SseDeserializer deserializer,
+  );
 
   @protected
   TimelineItem sse_decode_box_autoadd_timeline_item(
@@ -611,6 +625,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ThreadSummary? sse_decode_opt_box_autoadd_thread_summary(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer);
 
   @protected
@@ -642,6 +661,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SyncStatus sse_decode_sync_status(SseDeserializer deserializer);
+
+  @protected
+  ThreadSummary sse_decode_thread_summary(SseDeserializer deserializer);
 
   @protected
   TimelineDiff sse_decode_timeline_diff(SseDeserializer deserializer);
@@ -823,6 +845,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_room_summary(
     RoomSummary self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_thread_summary(
+    ThreadSummary self,
     SseSerializer serializer,
   );
 
@@ -1019,6 +1047,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_thread_summary(
+    ThreadSummary? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer);
 
   @protected
@@ -1050,6 +1084,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_sync_status(SyncStatus self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_thread_summary(ThreadSummary self, SseSerializer serializer);
 
   @protected
   void sse_encode_timeline_diff(TimelineDiff self, SseSerializer serializer);

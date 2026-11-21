@@ -9,7 +9,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'types.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Whether the bridge delivered a message to the remote network.
 enum BridgeStatus {
@@ -114,6 +114,12 @@ class EventItem {
   /// The original on the network, such as the reel's page.
   final String? externalUrl;
 
+  /// The replies under this message, when it started a thread.
+  final ThreadSummary? thread;
+
+  /// The message whose thread this one is a reply in.
+  final String? threadRoot;
+
   const EventItem({
     this.eventId,
     this.transactionId,
@@ -133,6 +139,8 @@ class EventItem {
     this.linkPreview,
     this.unresolvedMedia,
     this.externalUrl,
+    this.thread,
+    this.threadRoot,
   });
 
   @override
@@ -154,7 +162,9 @@ class EventItem {
       readBy.hashCode ^
       linkPreview.hashCode ^
       unresolvedMedia.hashCode ^
-      externalUrl.hashCode;
+      externalUrl.hashCode ^
+      thread.hashCode ^
+      threadRoot.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -178,7 +188,9 @@ class EventItem {
           readBy == other.readBy &&
           linkPreview == other.linkPreview &&
           unresolvedMedia == other.unresolvedMedia &&
-          externalUrl == other.externalUrl;
+          externalUrl == other.externalUrl &&
+          thread == other.thread &&
+          threadRoot == other.threadRoot;
 }
 
 /// A raw Hub response. Dart decodes the JSON.
@@ -550,6 +562,9 @@ class ReplyPreview {
 /// Levels follow mautrix: 2 full, 1 partial, 0 or below not supported.
 class RoomFeatures {
   final int reply;
+
+  /// Replies kept under the message they answer, as Slack has them.
+  final int thread;
   final int edit;
   final int delete;
   final int reaction;
@@ -569,6 +584,7 @@ class RoomFeatures {
 
   const RoomFeatures({
     required this.reply,
+    required this.thread,
     required this.edit,
     required this.delete,
     required this.reaction,
@@ -586,6 +602,7 @@ class RoomFeatures {
   @override
   int get hashCode =>
       reply.hashCode ^
+      thread.hashCode ^
       edit.hashCode ^
       delete.hashCode ^
       reaction.hashCode ^
@@ -605,6 +622,7 @@ class RoomFeatures {
       other is RoomFeatures &&
           runtimeType == other.runtimeType &&
           reply == other.reply &&
+          thread == other.thread &&
           edit == other.edit &&
           delete == other.delete &&
           reaction == other.reaction &&
@@ -821,6 +839,41 @@ enum SyncStatus {
   offline,
   error,
   terminated,
+}
+
+/// The replies in a thread, for the line under the message that started it.
+class ThreadSummary {
+  final int replyCount;
+
+  /// Who wrote the newest reply, what it says and when. None until the
+  /// reply is loaded.
+  final String? latestSenderName;
+  final String? latestText;
+  final PlatformInt64? latestTimestampMs;
+
+  const ThreadSummary({
+    required this.replyCount,
+    this.latestSenderName,
+    this.latestText,
+    this.latestTimestampMs,
+  });
+
+  @override
+  int get hashCode =>
+      replyCount.hashCode ^
+      latestSenderName.hashCode ^
+      latestText.hashCode ^
+      latestTimestampMs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ThreadSummary &&
+          runtimeType == other.runtimeType &&
+          replyCount == other.replyCount &&
+          latestSenderName == other.latestSenderName &&
+          latestText == other.latestText &&
+          latestTimestampMs == other.latestTimestampMs;
 }
 
 @freezed
