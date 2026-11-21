@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'src/desktop.dart';
 import 'src/rust/frb_generated.dart';
+import 'src/state/notification_privacy.dart';
 import 'src/state/push.dart';
 import 'src/ui/router.dart';
 import 'src/ui/theme.dart';
@@ -36,6 +37,8 @@ class _SwitchboardAppState extends ConsumerState<SwitchboardApp> {
   void initState() {
     super.initState();
     if (!pushSupported) return;
+    // Reading the setting hands the notification extension its copy.
+    ref.read(hideNotificationSenderProvider);
     // A notification tapped while the app runs opens its chat.
     pushChannel.setMethodCallHandler((call) async {
       if (call.method == 'openRoom' && call.arguments is String) _openRoom(call.arguments as String);

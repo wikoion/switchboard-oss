@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../rust/api/types.dart';
 import '../state/hub.dart';
+import 'layout.dart';
 import 'widgets/avatar.dart';
 
 class AccountsScreen extends ConsumerWidget {
@@ -188,6 +189,11 @@ class _LoginCard extends ConsumerWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                if (bridge.hasChannels && !needsRelink)
+                  TextButton(
+                    onPressed: () => openPage(context, '/settings/channels'),
+                    child: const Text('Channels'),
+                  ),
                 if (needsRelink)
                   TextButton(
                     onPressed: () => context.push(

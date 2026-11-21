@@ -8,6 +8,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 . tool/local-env.sh
+. tool/rust-path.sh
 # App Store Connect takes only builds from the iOS 26 SDK or later. The
 # default Xcode may be older (macOS 15 can't run Xcode 27), so use the
 # newest side-by-side Xcode 26 or later that xcodes installed, if there is one.

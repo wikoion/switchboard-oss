@@ -3733,15 +3733,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Preview dco_decode_preview(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 6)
-      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
     return Preview(
       senderName: dco_decode_opt_String(arr[0]),
-      isOwn: dco_decode_bool(arr[1]),
-      text: dco_decode_String(arr[2]),
-      sending: dco_decode_bool(arr[3]),
-      failed: dco_decode_bool(arr[4]),
-      isMembership: dco_decode_bool(arr[5]),
+      senderAvatarMxc: dco_decode_opt_String(arr[1]),
+      isOwn: dco_decode_bool(arr[2]),
+      text: dco_decode_String(arr[3]),
+      sending: dco_decode_bool(arr[4]),
+      failed: dco_decode_bool(arr[5]),
+      isMembership: dco_decode_bool(arr[6]),
     );
   }
 
@@ -4940,6 +4941,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Preview sse_decode_preview(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_senderName = sse_decode_opt_String(deserializer);
+    var var_senderAvatarMxc = sse_decode_opt_String(deserializer);
     var var_isOwn = sse_decode_bool(deserializer);
     var var_text = sse_decode_String(deserializer);
     var var_sending = sse_decode_bool(deserializer);
@@ -4947,6 +4949,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_isMembership = sse_decode_bool(deserializer);
     return Preview(
       senderName: var_senderName,
+      senderAvatarMxc: var_senderAvatarMxc,
       isOwn: var_isOwn,
       text: var_text,
       sending: var_sending,
@@ -6150,6 +6153,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_preview(Preview self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_opt_String(self.senderName, serializer);
+    sse_encode_opt_String(self.senderAvatarMxc, serializer);
     sse_encode_bool(self.isOwn, serializer);
     sse_encode_String(self.text, serializer);
     sse_encode_bool(self.sending, serializer);

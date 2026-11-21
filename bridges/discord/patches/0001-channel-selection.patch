@@ -1,0 +1,153 @@
+Switchboard, November 2026 (against megadiscord c915e03): bridge guild
+channels one at a time. Upstream bridges a guild whole or not at all; the
+login's metadata gains a per-channel choice, and the places that asked "is
+this guild bridged?" ask about the channel instead. channelIsBridged also
+checks the choice, so a deselected channel keeps its portal and room (and
+their history) while its events are dropped. Resyncs and message fetches
+read the choice when they run, not when they were queued, so work queued for
+a channel does nothing once the channel is deselected. The helpers and the
+provisioning endpoints are in overlay/pkg/connector/switchboard_channels.go.
+
+diff --git a/pkg/connector/backfill.go b/pkg/connector/backfill.go
+index d01fbbc..1b673f6 100644
+--- a/pkg/connector/backfill.go
++++ b/pkg/connector/backfill.go
+@@ -45,6 +45,10 @@ func (d *DiscordClient) FetchMessages(ctx context.Context, fetchParams bridgev2.
+ 		return nil, bridgev2.ErrNotLoggedIn
+ 	}
+ 
++	if !d.backfillAllowed(fetchParams.Portal) {
++		return backfillStopped(fetchParams), nil
++	}
++
+ 	parentChannelID := discordid.ParseChannelPortalID(fetchParams.Portal.ID)
+ 	channelID := parentChannelID
+ 	threadChannelID := ""
+@@ -115,6 +119,11 @@ func (d *DiscordClient) FetchMessages(ctx context.Context, fetchParams bridgev2.
+ 	} else if err != nil {
+ 		return nil, d.tryWrappingError(ctx, err)
+ 	}
++	// Checked again now that Discord has answered: if the channel was
++	// deselected meanwhile, what came back may be newer than that.
++	if !d.backfillAllowed(fetchParams.Portal) {
++		return backfillStopped(fetchParams), nil
++	}
+ 
+ 	// Update our user cache with all of the users present in the response. This
+ 	// indirectly makes `GetUserInfo` on `DiscordClient` return the information
+diff --git a/pkg/connector/client.go b/pkg/connector/client.go
+index 6fbb210..26715b1 100644
+--- a/pkg/connector/client.go
++++ b/pkg/connector/client.go
+@@ -745,7 +745,7 @@ func (d *DiscordClient) bridgedGuildIDs() map[string]struct{} {
+ }
+ 
+ func (d *DiscordClient) syncGuilds(ctx context.Context) {
+-	guildIDs := slices.Sorted(maps.Keys(d.bridgedGuildIDs()))
++	guildIDs := d.guildIDsToSync()
+ 
+ 	for _, guildID := range guildIDs {
+ 		log := zerolog.Ctx(ctx).With().
+@@ -874,14 +874,10 @@ func (d *DiscordClient) shouldBridgeChannel(
+ 		return false
+ 	}
+ 
+-	// TODO(skip): This method is relatively hot, consider maintaining the set
+-	// of bridged guild IDs in memory?
+-	bridgedGuildIDs := d.bridgedGuildIDs()
+-	if ch.GuildID != "" {
+-		if _, ok := bridgedGuildIDs[ch.GuildID]; !ok {
+-			// Only bridge guild channels that are part of bridged guilds.
+-			return false
+-		}
++	// Only bridge guild channels that were chosen, one by one or with their
++	// whole guild.
++	if ch.GuildID != "" && !d.channelSelected(ch.GuildID, ch.ID) {
++		return false
+ 	}
+ 
+ 	// Only ever bridge guild text channels.
+diff --git a/pkg/connector/events_chat_resync.go b/pkg/connector/events_chat_resync.go
+index eab55b0..e2f0aab 100644
+--- a/pkg/connector/events_chat_resync.go
++++ b/pkg/connector/events_chat_resync.go
+@@ -67,7 +67,8 @@ func (d *DiscordChatResync) GetChatInfo(ctx context.Context, portal *bridgev2.Po
+ }
+ 
+ func (d *DiscordChatResync) ShouldCreatePortal() bool {
+-	return d.createPortal && !d.channel.IsSpam
++	// The selection is read when the resync runs, not when it was queued.
++	return d.createPortal && !d.channel.IsSpam && d.Client.channelStillBridges(d.channel)
+ }
+ 
+ // compareMessageIDs compares two Discord message IDs.
+@@ -102,6 +103,11 @@ func (d *DiscordChatResync) CheckNeedsBackfill(ctx context.Context, latestBridge
+ 		Bool("has_latest_bridged", latestBridged != nil).
+ 		Logger()
+ 
++	if !d.Client.channelStillBridges(d.channel) {
++		log.Debug().Msg("Channel was deselected since the resync was queued, not backfilling")
++		return false, nil
++	}
++
+ 	if latestBridged == nil {
+ 		needsBackfill := d.channel.LastMessageID != ""
+ 		log.Debug().Bool("needs_backfill", needsBackfill).Msg("Computed needs backfill")
+diff --git a/pkg/connector/handlediscord.go b/pkg/connector/handlediscord.go
+index 5929fd2..b3b31f1 100644
+--- a/pkg/connector/handlediscord.go
++++ b/pkg/connector/handlediscord.go
+@@ -670,7 +670,7 @@ func (d *DiscordClient) queueIndividualMembershipChange(
+ 
+ func (d *DiscordClient) handleGuildUpdate(ctx context.Context, guild *discordgo.Guild) {
+ 	log := zerolog.Ctx(ctx)
+-	if _, bridged := d.bridgedGuildIDs()[guild.ID]; !bridged {
++	if !d.guildHasBridgedChannels(guild.ID) {
+ 		return
+ 	}
+ 	guildKey := d.guildPortalKey(guild.ID)
+@@ -820,7 +820,7 @@ func (d *DiscordClient) channelIsBridged(ctx context.Context, channelID string)
+ 		log.Err(err).Msg("Failed to look up existing portal when determining channel bridgedness")
+ 		return false, route
+ 	}
+-	return existingPortal != nil && existingPortal.MXID != "", route
++	return existingPortal != nil && existingPortal.MXID != "" && d.routeSelected(ctx, route), route
+ }
+ 
+ func (d *DiscordClient) handleUserGuildSettingsUpdate(ctx context.Context, evt *discordgo.UserGuildSettingsUpdate) {
+diff --git a/pkg/connector/provisioning.go b/pkg/connector/provisioning.go
+index 91ef4ff..79be700 100644
+--- a/pkg/connector/provisioning.go
++++ b/pkg/connector/provisioning.go
+@@ -81,6 +81,7 @@ func (d *DiscordConnector) setUpProvisioningAPIs() error {
+ 	// Unbridging doesn't touch discordgo, so it's okay to do it even when
+ 	// logged out.
+ 	r.HandleFunc("DELETE /v1/guilds/{guildID}", p.makeHandler(p.unbridgeGuild, false))
++	p.registerSwitchboardChannels(r)
+ 
+ 	return nil
+ }
+diff --git a/pkg/discordid/dbmeta.go b/pkg/discordid/dbmeta.go
+index d8b6ba3..22db4d5 100644
+--- a/pkg/discordid/dbmeta.go
++++ b/pkg/discordid/dbmeta.go
+@@ -39,6 +39,11 @@ type UserLoginMetadata struct {
+ 	Token            string                     `json:"token"`
+ 	HeartbeatSession discordgo.HeartbeatSession `json:"heartbeat_session"`
+ 	BridgedGuildIDs  map[string]bool            `json:"bridged_guild_ids,omitempty"`
++
++	// Switchboard: per-channel choices, keyed by guild ID then channel ID.
++	// True bridges the channel; false keeps one channel of a wholly bridged
++	// guild out. Channels with no entry follow their guild.
++	SwitchboardChannels map[string]map[string]bool `json:"switchboard_channels,omitempty"`
+ }
+ 
+ var _ database.MetaMerger = (*UserLoginMetadata)(nil)
+@@ -54,5 +59,6 @@ func (ulm *UserLoginMetadata) CopyFrom(incoming any) {
+ 	}
+ 	ulm.HeartbeatSession = discordgo.NewHeartbeatSession()
+ 
+-	// Retain the BridgedGuildIDs from the existing login.
++	// Retain the BridgedGuildIDs and SwitchboardChannels from the existing
++	// login.
+ }

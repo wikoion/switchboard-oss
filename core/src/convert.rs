@@ -81,6 +81,7 @@ pub(crate) fn preview(value: LatestEventValue) -> Option<(Preview, i64)> {
         LatestEventValue::Remote { timestamp, is_own, profile, content, .. } => Some((
             Preview {
                 sender_name: profile_name(&profile),
+                sender_avatar_mxc: profile_avatar(&profile),
                 is_own,
                 text: content_text(&content),
                 sending: false,
@@ -92,6 +93,7 @@ pub(crate) fn preview(value: LatestEventValue) -> Option<(Preview, i64)> {
         LatestEventValue::RemoteInvite { timestamp, inviter_profile, .. } => Some((
             Preview {
                 sender_name: profile_name(&inviter_profile),
+                sender_avatar_mxc: profile_avatar(&inviter_profile),
                 is_own: false,
                 text: "Invited you".to_owned(),
                 sending: false,
@@ -105,6 +107,7 @@ pub(crate) fn preview(value: LatestEventValue) -> Option<(Preview, i64)> {
             Some((
                 Preview {
                     sender_name: profile_name(&profile),
+                    sender_avatar_mxc: profile_avatar(&profile),
                     is_own: true,
                     text: content_text(&content),
                     sending: matches!(state, S::IsSending),

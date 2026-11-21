@@ -4,8 +4,9 @@ import UserNotifications
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
-  /// "switchboard/push": push registration, the shared session for the
-  /// notification extension, and opening chats from notifications.
+  /// "switchboard/push": push registration, the shared session and
+  /// settings for the notification extension, and opening chats from
+  /// notifications.
   private var pushChannel: FlutterMethodChannel?
   private var tokenWaiters: [FlutterResult] = []
   /// A chat tapped before Dart was listening.
@@ -38,6 +39,14 @@ import UserNotifications
       case "shareSession":
         SharedSession.store(call.arguments as? String)
         result(nil)
+      case "setHideSender":
+        // The setting to hide who sent a message, for the notification
+        // extension, which draws the notifications.
+        if NotificationPrivacy.store((call.arguments as? Bool) ?? true) {
+          result(nil)
+        } else {
+          result(FlutterError(code: "keychain", message: "The keychain didn't save the setting", details: nil))
+        }
       case "setBadge":
         // The app icon counts unread chats; pushes only update it when a
         // message arrives, so reading in the app has to update it too.

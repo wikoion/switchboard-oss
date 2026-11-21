@@ -47,6 +47,8 @@ pub struct Network {
 #[derive(Clone, Debug)]
 pub struct Preview {
     pub sender_name: Option<String>,
+    /// The sender's own picture, for notifications.
+    pub sender_avatar_mxc: Option<String>,
     pub is_own: bool,
     pub text: String,
     pub sending: bool,
