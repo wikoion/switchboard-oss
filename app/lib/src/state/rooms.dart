@@ -2,12 +2,26 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../rust/api/types.dart';
 import 'diff.dart';
+import 'favourites.dart';
 import 'hub.dart';
 import 'session.dart';
 
-/// The chat list, newest first. Null until the first update arrives.
-final roomListProvider =
+/// The chat list as the server has it, newest first. Null until the first
+/// update arrives.
+final serverRoomListProvider =
     NotifierProvider<RoomListNotifier, List<RoomSummary>?>(RoomListNotifier.new);
+
+/// The chat list, with the favourites changed on this device that the
+/// server doesn't have yet.
+final roomListProvider = Provider<List<RoomSummary>?>((ref) {
+  final rooms = ref.watch(serverRoomListProvider);
+  final pending = ref.watch(pendingFavouritesProvider);
+  if (rooms == null || pending.isEmpty) return rooms;
+  return [
+    for (final r in rooms)
+      if (pending[r.id] case final change?) withFavourite(r, change) else r,
+  ];
+});
 
 class RoomListNotifier extends Notifier<List<RoomSummary>?> {
   @override

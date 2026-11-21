@@ -385,6 +385,7 @@ abstract class RustLibApi extends BaseApi {
     required String gatewayUrl,
     required String deviceName,
     required String lang,
+    String? payloadKey,
   });
 
   Future<void> crateApiClientSwitchboardCoreSetTyping({
@@ -2512,6 +2513,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String gatewayUrl,
     required String deviceName,
     required String lang,
+    String? payloadKey,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -2526,6 +2528,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(gatewayUrl, serializer);
           sse_encode_String(deviceName, serializer);
           sse_encode_String(lang, serializer);
+          sse_encode_opt_String(payloadKey, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -2538,7 +2541,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiClientSwitchboardCoreSetPusherConstMeta,
-        argValues: [that, appId, pushkey, gatewayUrl, deviceName, lang],
+        argValues: [
+          that,
+          appId,
+          pushkey,
+          gatewayUrl,
+          deviceName,
+          lang,
+          payloadKey,
+        ],
         apiImpl: this,
       ),
     );
@@ -2554,6 +2565,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "gatewayUrl",
           "deviceName",
           "lang",
+          "payloadKey",
         ],
       );
 
@@ -7095,6 +7107,7 @@ class SwitchboardCoreImpl extends RustOpaque implements SwitchboardCore {
     required String gatewayUrl,
     required String deviceName,
     required String lang,
+    String? payloadKey,
   }) => RustLib.instance.api.crateApiClientSwitchboardCoreSetPusher(
     that: this,
     appId: appId,
@@ -7102,6 +7115,7 @@ class SwitchboardCoreImpl extends RustOpaque implements SwitchboardCore {
     gatewayUrl: gatewayUrl,
     deviceName: deviceName,
     lang: lang,
+    payloadKey: payloadKey,
   );
 
   /// Tells the room you are, or have stopped, typing.

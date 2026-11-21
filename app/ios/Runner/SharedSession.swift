@@ -97,3 +97,36 @@ enum NotificationPrivacy {
     return added == errSecSuccess || added == errSecDuplicateItem
   }
 }
+
+/// The key the server seals each push's message with, so the notification
+/// extension can show it without fetching it. Made here once, kept in the
+/// shared keychain group, and given to the server with the pusher.
+enum PushKey {
+  private static let account = "push_key"
+
+  static func load() -> Data? {
+    var q = SharedSession.query(account)
+    q[kSecReturnData] = true
+    q[kSecMatchLimit] = kSecMatchLimitOne
+    var item: CFTypeRef?
+    guard SecItemCopyMatching(q as CFDictionary, &item) == errSecSuccess, let key = item as? Data, key.count == 32
+    else { return nil }
+    return key
+  }
+
+  /// The key, made and stored first if there is none. Nil when the
+  /// keychain can't keep one: pushes then go without the message.
+  static func loadOrCreate() -> Data? {
+    if let key = load() { return key }
+    var key = Data(count: 32)
+    guard key.withUnsafeMutableBytes({ SecRandomCopyBytes(kSecRandomDefault, 32, $0.baseAddress!) }) == errSecSuccess
+    else { return nil }
+    var add = SharedSession.query(account)
+    add[kSecValueData] = key
+    // The extension runs while the phone is locked.
+    add[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+    let added = SecItemAdd(add as CFDictionary, nil)
+    // Lost a race with another call: use the key that won.
+    return added == errSecSuccess ? key : load()
+  }
+}

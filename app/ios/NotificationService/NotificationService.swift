@@ -1,11 +1,15 @@
+import CryptoKit
 import ImageIO
 import Intents
 import UserNotifications
 
 /// Replaces Sygnal's placeholder ("New message") with the sender, network
-/// and text, fetched from the homeserver over the tailnet. Pushes carry only
-/// the room and event IDs, so no message text passes through Apple. When the
-/// server can't be reached in time the placeholder stays.
+/// and text. The server sends the message with the push, sealed with a key
+/// only it and this phone hold (see `PushContent`), so nothing readable
+/// passes through Apple and the notification needs no network. A push
+/// without it, from a server that doesn't send it yet, has the message
+/// fetched from the homeserver over the tailnet; when that can't be reached
+/// in time the placeholder stays.
 ///
 /// A sender with a picture is drawn as a communication notification: iOS
 /// puts their picture where the app's icon would be. Everything else keeps
@@ -25,20 +29,22 @@ class NotificationService: UNNotificationServiceExtension {
     self.content = content
     self.deliver = contentHandler
     let info = request.content.userInfo
-    guard let roomId = info["room_id"] as? String,
-      let eventId = info["event_id"] as? String,
-      let session = SharedSession.load()
-    else {
+    guard let roomId = info["room_id"] as? String, let eventId = info["event_id"] as? String else {
       finish()
       return
     }
     content.threadIdentifier = roomId
     // Read once, here: the setting as it stood when the message came.
     let hideSender = NotificationPrivacy.hidesSender
+    let session = SharedSession.load()
+    let client = session.map { Client(homeserver: $0.homeserver, token: $0.token) }
+    let sent = (info[PushContent.field] as? String).flatMap { PushContent.open($0, key: PushKey.load()) }
     task = Task {
-      let client = Client(homeserver: session.homeserver, token: session.token)
-      let shown = await Self.render(
-        client: client, roomId: roomId, eventId: eventId, me: session.userId, hideSender: hideSender)
+      var message = sent
+      if message == nil, let client {
+        message = await Self.fetch(client: client, roomId: roomId, eventId: eventId, hideSender: hideSender)
+      }
+      let shown = message.map { Self.shown($0, hideSender: hideSender) }
       if let shown {
         content.title = shown.title
         content.subtitle = shown.subtitle
@@ -49,14 +55,23 @@ class NotificationService: UNNotificationServiceExtension {
       }
       // The text is in place, so the deadline delivers it should the
       // picture be slow.
-      if let sender = shown?.sender, let picture = await client.picture(sender.pictureMxc),
-        let fromSender = Self.communication(
-          content, roomId: roomId, from: sender, me: session.userId, picture: picture)
+      if let sender = shown?.sender, let me = session?.userId,
+        let picture = await Self.picture(sender.pictureMxc, client: client),
+        let fromSender = Self.communication(content, roomId: roomId, from: sender, me: me, picture: picture)
       {
         self.content = fromSender
       }
       self.finish()
     }
+  }
+
+  /// A sender's picture: the copy kept from an earlier notification, or
+  /// else fetched and kept, so the next one needs no network.
+  static func picture(_ mxc: String, client: Client?, cache: PictureCache = PictureCache()) async -> Data? {
+    if let kept = cache.read(mxc), Client.isImage(kept) { return kept }
+    guard let fetched = await client?.picture(mxc) else { return nil }
+    cache.write(mxc, fetched)
+    return fetched
   }
 
   override func serviceExtensionTimeWillExpire() {
@@ -99,16 +114,21 @@ class NotificationService: UNNotificationServiceExtension {
   static func render(
     client: Client, roomId: String, eventId: String, me: String, hideSender: Bool = false
   ) async -> Shown? {
-    guard let event = await client.get("rooms/\(roomId.escaped)/event/\(eventId.escaped)"),
-      let sender = event["sender"] as? String
-    else { return nil }
-    let ts = (event["origin_server_ts"] as? NSNumber)?.int64Value
-    if hideSender {
-      // Nothing about the sender or the chat is asked for, let alone shown.
-      var shown = compose(event: event, senderName: "", roomName: nil, network: network(of: sender), hideSender: true)
-      shown.ts = ts
-      return shown
-    }
+    await fetch(client: client, roomId: roomId, eventId: eventId, hideSender: hideSender)
+      .map { shown($0, hideSender: hideSender) }
+  }
+
+  /// The message from the homeserver, with its sender's membership of the
+  /// chat and the chat's name. Nil when the message can't be fetched.
+  static func fetch(client: Client, roomId: String, eventId: String, hideSender: Bool) async -> PushContent? {
+    // The tailnet may only just be coming up, so the message gets a
+    // second try.
+    let path = "rooms/\(roomId.escaped)/event/\(eventId.escaped)"
+    var event = await client.get(path)
+    if event == nil, !Task.isCancelled { event = await client.get(path) }
+    guard let event, let sender = event["sender"] as? String else { return nil }
+    // Nothing about the sender or the chat is asked for, let alone shown.
+    if hideSender { return PushContent(event: event, member: nil, roomName: nil) }
     // Both at once, as separate tasks. Not `async let`: on iOS 26 the
     // optimised build aborts in the concurrency runtime when the pair
     // finishes ("asyncLet_finish_after_task_completion"), and iOS then
@@ -117,13 +137,26 @@ class NotificationService: UNNotificationServiceExtension {
     let roomName = Task { await client.get("rooms/\(roomId.escaped)/state/m.room.name") }
     let memberEvent = await member.value
     let nameEvent = await roomName.value
-    let senderName = memberEvent?["displayname"] as? String ?? localpart(sender)
-    let room = nameEvent?["name"] as? String
+    return PushContent(event: event, member: memberEvent, roomName: nameEvent?["name"] as? String)
+  }
+
+  /// What to show for a message. Pure, so it can be tested.
+  static func shown(_ message: PushContent, hideSender: Bool) -> Shown {
+    let event = message.event
+    let sender = event["sender"] as? String ?? ""
+    let ts = (event["origin_server_ts"] as? NSNumber)?.int64Value
     let network = network(of: sender)
+    if hideSender {
+      var shown = compose(event: event, senderName: "", roomName: nil, network: network, hideSender: true)
+      shown.ts = ts
+      return shown
+    }
+    let senderName = message.member?["displayname"] as? String ?? localpart(sender)
+    let room = message.roomName
     var shown = compose(event: event, senderName: senderName, roomName: room, network: network)
     shown.ts = ts
     let group = isGroup(roomName: room, senderName: senderName) ? room : nil
-    if let picture = pictureMxc(member: memberEvent) {
+    if let picture = pictureMxc(member: message.member) {
       shown.sender = Sender(id: sender, name: senderName, group: group, network: network, pictureMxc: picture)
     }
     return shown
@@ -247,6 +280,55 @@ class NotificationService: UNNotificationServiceExtension {
 
   static func localpart(_ userId: String) -> String {
     String(userId.dropFirst().prefix { $0 != ":" })
+  }
+}
+
+/// A message as the server sends it with a push, or as fetched: the event,
+/// its sender's membership of the chat, and the chat's name.
+///
+/// With the push it comes as `sb` in the payload: base64 of an AES-256-GCM
+/// box (nonce, ciphertext, tag) around JSON, sealed by the Hub with the key
+/// in `PushKey`.
+struct PushContent {
+  static let field = "sb"
+
+  var event: [String: Any]
+  var member: [String: Any]?
+  var roomName: String?
+
+  /// Nil when there is no key, the box wasn't sealed with it, or what is
+  /// inside isn't a message.
+  static func open(_ sealed: String, key: Data?) -> PushContent? {
+    guard let key, let box = Data(base64Encoded: sealed),
+      let plain = try? AES.GCM.open(AES.GCM.SealedBox(combined: box), using: SymmetricKey(data: key)),
+      let json = try? JSONSerialization.jsonObject(with: plain) as? [String: Any],
+      let event = json["event"] as? [String: Any], event["sender"] is String
+    else { return nil }
+    return PushContent(
+      event: event, member: json["member"] as? [String: Any], roomName: json["room_name"] as? String)
+  }
+}
+
+/// Senders' pictures kept on the phone, by their mxc:// URI, so a
+/// notification can show one without the network.
+struct PictureCache {
+  var directory: URL? = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+    .appendingPathComponent("sender-pictures", isDirectory: true)
+
+  private func file(_ mxc: String) -> URL? {
+    let name = SHA256.hash(data: Data(mxc.utf8)).map { String(format: "%02x", $0) }.joined()
+    return directory?.appendingPathComponent(name)
+  }
+
+  func read(_ mxc: String) -> Data? {
+    file(mxc).flatMap { try? Data(contentsOf: $0) }
+  }
+
+  func write(_ mxc: String, _ picture: Data) {
+    guard let directory, let file = file(mxc) else { return }
+    try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    // Readable while the phone is locked, as the extension runs then.
+    try? picture.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
   }
 }
 

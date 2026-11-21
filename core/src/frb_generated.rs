@@ -3076,6 +3076,7 @@ fn wire__crate__api__client__SwitchboardCore_set_pusher_impl(
             let api_gateway_url = <String>::sse_decode(&mut deserializer);
             let api_device_name = <String>::sse_decode(&mut deserializer);
             let api_lang = <String>::sse_decode(&mut deserializer);
+            let api_payload_key = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
@@ -3104,6 +3105,7 @@ fn wire__crate__api__client__SwitchboardCore_set_pusher_impl(
                             api_gateway_url,
                             api_device_name,
                             api_lang,
+                            api_payload_key,
                         )
                         .await?;
                         std::result::Result::Ok(output_ok)

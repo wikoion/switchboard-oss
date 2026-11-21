@@ -39,6 +39,9 @@ import UserNotifications
       case "shareSession":
         SharedSession.store(call.arguments as? String)
         result(nil)
+      case "pushKey":
+        // The key the server seals each push's message with, as base64.
+        result(PushKey.loadOrCreate()?.base64EncodedString())
       case "setHideSender":
         // The setting to hide who sent a message, for the notification
         // extension, which draws the notifications.

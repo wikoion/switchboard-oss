@@ -995,6 +995,7 @@ impl SwitchboardCore {
         gateway_url: String,
         device_name: String,
         lang: String,
+        payload_key: Option<String>,
     ) -> Result<()> {
         use matrix_sdk::ruma::{
             api::client::push::{PusherIds, PusherInit, PusherKind},
@@ -1017,6 +1018,12 @@ impl SwitchboardCore {
                     }
                 }),
             );
+            // The Hub seals each push's message with this key, for the
+            // notification extension, and takes the key out of the push
+            // before it goes on to Sygnal.
+            if let Some(key) = payload_key {
+                data.data.insert("sb_key".to_owned(), key.into());
+            }
             let pusher = PusherInit {
                 ids: PusherIds::new(pushkey, app_id),
                 kind: PusherKind::Http(data),

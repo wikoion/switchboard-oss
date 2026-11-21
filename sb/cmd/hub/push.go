@@ -64,6 +64,7 @@ func (s *server) notify(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	body = p.withContent(r.Context(), body, s.log)
 	fwd, err := http.NewRequestWithContext(r.Context(), http.MethodPost, p.gateway, bytes.NewReader(body))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "M_UNKNOWN", err.Error())

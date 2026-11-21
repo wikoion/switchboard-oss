@@ -79,12 +79,24 @@ class PushController extends AsyncNotifier<bool> {
         await core.removePusher(appId: appId, pushkey: previous).catchError((_) {});
       }
     }
+    // The server seals each push's message with this, so the notification
+    // shows it without having to reach the server. Without a key pushes
+    // carry no message and the extension fetches it.
+    String? payloadKey;
+    try {
+      payloadKey = await pushChannel.invokeMethod<String>('pushKey');
+    } on PlatformException {
+      // As before the key existed.
+    } on MissingPluginException {
+      // A native side from before the key existed.
+    }
     await core.setPusher(
       appId: pushAppId,
       pushkey: token,
       gatewayUrl: pushGateway,
       deviceName: 'Switchboard on iPhone',
       lang: 'en',
+      payloadKey: payloadKey,
     );
     await _storage.write(key: _tokenKey, value: token);
   }

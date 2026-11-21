@@ -132,6 +132,35 @@ expect(NotificationService.placeLine(of: native) ?? "-", "Family", "a group with
 // even to put it back: the extension reads it at any moment, and finding
 // none means senders are shown.
 var keychainCalls: [String] = []
+// The message sent with a push, sealed by the Hub (sb/cmd/hub/push_content.go
+// made this one) with the key "0123456789abcdef0123456789abcdef".
+let pushKey = Data("0123456789abcdef0123456789abcdef".utf8)
+let sealedPush = "w+GyjntJvgFLivDrJ7nN2cIa04iej7nP174t/+/WOGu7iJnrzUbBMFL8BQAlAqgEQoIIOy2mqWfa3IUjBZGJbEnXSuyGVE/kpJJqfTdkMAcLmpXl0w6jwZM4XguKqwhVtkr5xeejHe2Oyv2NbFyVByVyLcMLuKOQzCx8ekJzeaxH9WjGdgL7NRMBBgwNP4h5Fogd64oh/N0QbIIHpNCO7Z1xfe0UZtAuSdShXvuy14HHFpg1Wl96U9ZOOaj8WG98qQGD83/ytIAphajNuThMWcrdXaFUnJ+AIolfMmLNhigZGjs/TYWr5RZ8VXAWZFNQ5hhUYS3psqWTnYpdK89Nd6irslU3IHgTeX9YYoqoArhMkc7V/z+hWSqGYWAlBO5bHQ=="
+if let sent = PushContent.open(sealedPush, key: pushKey) {
+  let shown = NotificationService.shown(sent, hideSender: false)
+  expect(shown.title, "Family", "sealed push: the chat")
+  expect(shown.subtitle, "Alice · WhatsApp", "sealed push: the sender and network")
+  expect(shown.body, "See you at 7", "sealed push: the text")
+  expect(shown.sender?.pictureMxc ?? "-", "mxc://switchboard.internal/alice", "sealed push: the sender's picture")
+  check(shown.ts == 5_000_000, "sealed push: the message's time")
+  let hidden = NotificationService.shown(sent, hideSender: true)
+  expect(hidden.title, "New message", "sealed push with senders hidden: the title")
+  check(hidden.sender == nil, "sealed push with senders hidden: no picture")
+} else {
+  check(false, "a push sealed by the Hub opens with the phone's key")
+}
+check(PushContent.open(sealedPush, key: Data(repeating: 7, count: 32)) == nil, "another key doesn't open a push")
+check(PushContent.open(sealedPush, key: nil) == nil, "no key opens nothing")
+check(PushContent.open("not base64!", key: pushKey) == nil, "rubbish in place of a sealed push")
+
+let pictures = PictureCache(
+  directory: FileManager.default.temporaryDirectory.appendingPathComponent("sb-pictures-\(ProcessInfo.processInfo.processIdentifier)"))
+check(pictures.read("mxc://example.org/alice") == nil, "no picture kept at first")
+pictures.write("mxc://example.org/alice", Data([1, 2, 3]))
+check(pictures.read("mxc://example.org/alice") == Data([1, 2, 3]), "a kept picture is read back")
+check(pictures.read("mxc://example.org/bob") == nil, "one sender's picture isn't another's")
+if let directory = pictures.directory { try? FileManager.default.removeItem(at: directory) }
+
 func keychain(add: OSStatus = errSecSuccess, delete: OSStatus = errSecSuccess) -> NotificationPrivacy.Keychain {
   keychainCalls = []
   return NotificationPrivacy.Keychain(

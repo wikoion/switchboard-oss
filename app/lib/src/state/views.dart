@@ -1,5 +1,6 @@
 // Inbox views: everything, one network, or one linked account.
 
+import 'favourites.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../rust/api/types.dart';
@@ -368,25 +369,23 @@ double orderAfter(List<RoomSummary> current) {
   return last + (1 - last) / 2;
 }
 
-/// Adds [room] to the favourites (at the end) or takes it out.
+/// Adds [room] to the favourites (at the end) or takes it out. It shows at
+/// once and reaches the server when there is a connection.
 Future<void> setFavourite(WidgetRef ref, RoomSummary room, bool favourite) async {
   final current = ref.read(listedRoomsProvider)?.pinned ?? const [];
-  await ref.read(coreProvider).setFavourite(
-        roomId: room.id,
-        favourite: favourite,
-        order: favourite ? orderAfter(current) : null,
-      );
+  ref
+      .read(pendingFavouritesProvider.notifier)
+      .set(room.id, favourite: favourite, order: favourite ? orderAfter(current) : null);
 }
 
 /// Saves a new drag order: every favourite gets a fresh, evenly spread
 /// order, so repeated moves never run out of room between two values.
 Future<void> reorderFavourites(WidgetRef ref, List<RoomSummary> ordered) async {
-  final core = ref.read(coreProvider);
+  final pending = ref.read(pendingFavouritesProvider.notifier);
   final orders = spreadOrders(ordered.length);
-  await Future.wait([
-    for (final (i, r) in ordered.indexed)
-      if (r.favouriteOrder != orders[i]) core.setFavourite(roomId: r.id, favourite: true, order: orders[i]),
-  ]);
+  for (final (i, r) in ordered.indexed) {
+    if (r.favouriteOrder != orders[i]) pending.set(r.id, favourite: true, order: orders[i]);
+  }
 }
 
 /// The chat [step] places from [current] in [order], stopping at the ends.

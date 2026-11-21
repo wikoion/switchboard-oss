@@ -281,6 +281,7 @@ abstract class SwitchboardCore implements RustOpaqueInterface {
     required String gatewayUrl,
     required String deviceName,
     required String lang,
+    String? payloadKey,
   });
 
   /// Tells the room you are, or have stopped, typing.
