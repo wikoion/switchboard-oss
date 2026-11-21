@@ -36,6 +36,7 @@ class BridgeLogin {
     required this.id,
     required this.name,
     required this.state,
+    this.remoteName,
     this.message,
     this.phone,
     this.username,
@@ -50,6 +51,7 @@ class BridgeLogin {
     return BridgeLogin(
       id: j['id'] as String,
       name: profile['name'] as String? ?? j['name'] as String? ?? j['id'] as String,
+      remoteName: j['name'] as String?,
       state: state['state_event'] as String? ?? 'UNKNOWN',
       message: state['message'] as String? ?? state['error'] as String?,
       phone: profile['phone'] as String?,
@@ -62,6 +64,11 @@ class BridgeLogin {
 
   final String id;
   final String name;
+
+  /// The bridge's own name for the account, such as "Northwind -
+  /// alex@example.com" for Slack: it tells apart two accounts with the
+  /// same profile.
+  final String? remoteName;
 
   /// A bridge state event: CONNECTED, CONNECTING, BACKFILLING,
   /// TRANSIENT_DISCONNECT, BAD_CREDENTIALS, UNKNOWN_ERROR, LOGGED_OUT.

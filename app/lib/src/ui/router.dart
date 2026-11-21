@@ -97,7 +97,22 @@ final routerProvider = Provider<GoRouter>((ref) {
                 pageBuilder: (_, s) => _page(s, const SettingsScreen()),
                 routes: [
                   GoRoute(path: 'search', pageBuilder: (_, s) => _page(s, const SearchSettingsScreen())),
-                  GoRoute(path: 'channels', pageBuilder: (_, s) => _page(s, const ChannelsScreen())),
+                  GoRoute(
+                    path: 'channels',
+                    pageBuilder: (_, s) => _page(s, const ChannelsScreen()),
+                    routes: [
+                      GoRoute(
+                        path: ':bridge/:login',
+                        pageBuilder: (_, s) => _page(
+                          s,
+                          AccountChannelsScreen(
+                            bridgeId: s.pathParameters['bridge']!,
+                            loginId: s.pathParameters['login']!,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
               GoRoute(path: 'notifications', pageBuilder: (_, s) => _page(s, const NotificationsScreen())),

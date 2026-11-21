@@ -6,9 +6,13 @@ import '../state/hub.dart';
 import 'layout.dart';
 import 'widgets/avatar.dart';
 
+/// The page for choosing one linked account's channels.
+String accountChannelsPath(String bridgeId, String loginId) =>
+    '/settings/channels/${Uri.encodeComponent(bridgeId)}/${Uri.encodeComponent(loginId)}';
+
 /// Which Discord and Slack channels come into Switchboard. DMs always do;
-/// channels are chosen here, per linked account, at any time. The bridges
-/// hold the selection, so nothing is kept on the device.
+/// channels are chosen per linked account, at any time. This lists the
+/// accounts; each opens its own page of channels.
 class ChannelsScreen extends ConsumerWidget {
   const ChannelsScreen({super.key});
 
@@ -51,17 +55,78 @@ class ChannelsScreen extends ConsumerWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
           child: Text(
-            'Direct messages always come in. Choose the channels to bring in as well. '
+            'Direct messages always come in. Choose the channels to bring in as well, account by account. '
             'Turning a channel off stops new messages; the chat and its history stay.',
             style: muted,
           ),
         ),
+        // The channel lists are only fetched on an account's own page.
         for (final a in accounts)
-          _AccountChannels(key: ValueKey('${a.bridge.id}/${a.login.id}'), bridge: a.bridge, login: a.login),
+          ListTile(
+            key: ValueKey('${a.bridge.id}/${a.login.id}'),
+            leading: _badge(a.bridge),
+            title: Text(a.login.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+            subtitle: Text(_subtitle(a.bridge, a.login)),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => openPage(context, accountChannelsPath(a.bridge.id, a.login.id)),
+          ),
         const SizedBox(height: 24),
       ],
     );
   }
+}
+
+/// One linked account's servers or workspaces and their channel switches.
+class AccountChannelsScreen extends ConsumerWidget {
+  const AccountChannelsScreen({super.key, required this.bridgeId, required this.loginId});
+  final String bridgeId;
+  final String loginId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bridges = ref.watch(bridgesProvider);
+    final bridge = bridges.value?.where((b) => b.id == bridgeId && b.hasChannels).firstOrNull;
+    final login = bridge?.logins.where((l) => l.id == loginId).firstOrNull;
+    return Scaffold(
+      appBar: AppBar(title: Text(bridge == null ? 'Channels' : '${bridge.network} channels')),
+      body: switch (bridges) {
+        // Keep showing the last answer while a refresh is in flight.
+        AsyncValue(value: _?) when bridge != null && login != null => ListView(
+            children: [
+              _AccountChannels(key: ValueKey('$bridgeId/$loginId'), bridge: bridge, login: login),
+              const SizedBox(height: 24),
+            ],
+          ),
+        // Unlinked since the page was opened, or an old link to it.
+        AsyncValue(value: _?) => _Notice(
+            icon: Icons.link_off_rounded,
+            text: "This account isn't linked any more.",
+            action: 'Accounts',
+            onAction: () => openPage(context, '/accounts'),
+          ),
+        AsyncError(:final error) => _Notice(
+            icon: Icons.cloud_off_rounded,
+            text: "Couldn't load accounts: $error",
+            action: 'Try again',
+            onAction: () => ref.invalidate(bridgesProvider),
+          ),
+        _ => const Center(child: CircularProgressIndicator()),
+      },
+    );
+  }
+}
+
+Widget _badge(Bridge bridge) => NetworkBadge(
+      network: Network(id: bridge.protocolId, name: bridge.network, avatarMxc: bridge.iconMxc),
+      size: 28,
+    );
+
+/// The network and whatever tells this account from another on it: the
+/// bridge's own name for it when that adds something, else its handle.
+String _subtitle(Bridge bridge, BridgeLogin login) {
+  final remote = login.remoteName;
+  final detail = remote != null && remote.isNotEmpty && remote != login.name ? remote : login.handle;
+  return detail == null ? bridge.network : '${bridge.network} · $detail';
 }
 
 /// A centred message with one thing to do about it.
@@ -162,16 +227,10 @@ class _AccountChannelsState extends ConsumerState<_AccountChannels> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Divider(),
         ListTile(
-          leading: NetworkBadge(
-            network: Network(id: bridge.protocolId, name: bridge.network, avatarMxc: bridge.iconMxc),
-            size: 28,
-          ),
+          leading: _badge(bridge),
           title: Text(widget.login.name, style: const TextStyle(fontWeight: FontWeight.w700)),
-          subtitle: Text(
-            widget.login.handle == null ? bridge.network : '${bridge.network} · ${widget.login.handle}',
-          ),
+          subtitle: Text(_subtitle(bridge, widget.login)),
         ),
         switch (groups) {
           AsyncData(:final value) when value.every((g) => g.channels.isEmpty) => Padding(

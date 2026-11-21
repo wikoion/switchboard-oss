@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../rust/api/types.dart';
 import '../state/hub.dart';
+import 'channels_screen.dart';
 import 'layout.dart';
 import 'widgets/avatar.dart';
 
@@ -191,7 +192,7 @@ class _LoginCard extends ConsumerWidget {
               children: [
                 if (bridge.hasChannels && !needsRelink)
                   TextButton(
-                    onPressed: () => openPage(context, '/settings/channels'),
+                    onPressed: () => openPage(context, accountChannelsPath(bridge.id, login.id)),
                     child: const Text('Channels'),
                   ),
                 if (needsRelink)

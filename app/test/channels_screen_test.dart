@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:switchboard/src/rust/api/types.dart';
 import 'package:switchboard/src/state/hub.dart';
 import 'package:switchboard/src/ui/channels_screen.dart';
@@ -17,7 +18,8 @@ Bridge bridge(String id, String network, List<BridgeLogin> logins) => Bridge(
       logins: logins,
     );
 
-BridgeLogin login(String id, String name) => BridgeLogin(id: id, name: name, state: 'CONNECTED');
+BridgeLogin login(String id, String name, {String? remoteName, String? email}) =>
+    BridgeLogin(id: id, name: name, state: 'CONNECTED', remoteName: remoteName, email: email);
 
 final discord = bridge('discord', 'Discord', [login('301', 'Alex Rivera')]);
 final slack = bridge('slack', 'Slack', [login('T1-U1', 'Northwind'), login('T2-U9', 'Atlas Labs')]);
@@ -114,12 +116,46 @@ class FakeBridges {
   }
 }
 
-Widget app(FakeBridges hub, {List<Bridge>? bridges}) => ProviderScope(
+/// The account picker, or with [account] ("bridge/login") that account's
+/// own page.
+Widget app(FakeBridges hub, {List<Bridge>? bridges, String? account}) => ProviderScope(
       overrides: [
         hubProvider.overrideWithValue(HubApi(hub.send)),
         bridgesProvider.overrideWith((ref) async => bridges ?? [whatsapp, discord, slack]),
       ],
-      child: const MaterialApp(home: ChannelsScreen()),
+      child: MaterialApp(
+        home: account == null
+            ? const ChannelsScreen()
+            : AccountChannelsScreen(bridgeId: account.split('/')[0], loginId: account.split('/')[1]),
+      ),
+    );
+
+/// The picker and the account pages under the app's own paths.
+Widget routedApp(FakeBridges hub, {List<Bridge>? bridges}) => ProviderScope(
+      overrides: [
+        hubProvider.overrideWithValue(HubApi(hub.send)),
+        bridgesProvider.overrideWith((ref) async => bridges ?? [whatsapp, discord, slack]),
+      ],
+      child: MaterialApp.router(
+        routerConfig: GoRouter(
+          initialLocation: '/settings/channels',
+          routes: [
+            GoRoute(
+              path: '/settings/channels',
+              builder: (_, _) => const ChannelsScreen(),
+              routes: [
+                GoRoute(
+                  path: ':bridge/:login',
+                  builder: (_, s) => AccountChannelsScreen(
+                    bridgeId: s.pathParameters['bridge']!,
+                    loginId: s.pathParameters['login']!,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
 
 /// Screens with a spinner never settle; pump a few frames instead.
@@ -154,36 +190,82 @@ void main() {
     addTearDown(view.reset);
   });
 
-  testWidgets('lists each linked Discord and Slack account with its channels by server or workspace',
-      (tester) async {
+  testWidgets('lists each linked Discord and Slack account without asking for any channels', (tester) async {
     final hub = FakeBridges();
     await tester.pumpWidget(app(hub));
     await tester.pumpAndSettle();
 
-    // One section per linked account; WhatsApp has no channels to choose.
+    // One row per linked account; WhatsApp has no channels to choose.
     expect(find.text('Alex Rivera'), findsOneWidget);
-    expect(find.text('Northwind'), findsNWidgets(2), reason: 'the account and its workspace');
-    expect(find.text('Atlas Labs'), findsNWidgets(2));
+    expect(find.text('Northwind'), findsOneWidget);
+    expect(find.text('Atlas Labs'), findsOneWidget);
     expect(find.text('Alex'), findsNothing);
-    expect(
-      hub.calls.map((c) => c.$2),
-      containsAll([
-        '/bridges/discord/provision/switchboard/v1/channels?login_id=301',
-        '/bridges/slack/provision/switchboard/v1/channels?login_id=T1-U1',
-        '/bridges/slack/provision/switchboard/v1/channels?login_id=T2-U9',
-      ]),
-    );
+    expect(find.text('Discord'), findsOneWidget);
+    expect(find.text('Slack'), findsNWidgets(2));
+    expect(find.byIcon(Icons.chevron_right_rounded), findsNWidgets(3));
 
-    // Workspaces with one group open by themselves; so does a group with a
-    // channel on. Discord's two servers start closed and say what's on.
+    // The channels wait for the account's own page.
+    expect(find.byType(SwitchListTile), findsNothing);
+    expect(hub.calls, isEmpty);
+  });
+
+  testWidgets('tapping an account opens its own page of channels', (tester) async {
+    final hub = FakeBridges();
+    await tester.pumpWidget(routedApp(hub));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Atlas Labs'));
+    await tester.pumpAndSettle();
+    expect(find.text('Slack channels'), findsOneWidget);
+    expect(find.byKey(const ValueKey('T2/C1')), findsOneWidget);
+    expect(hub.calls, [('GET', '/bridges/slack/provision/switchboard/v1/channels?login_id=T2-U9')]);
+  });
+
+  test('an account page path encodes the bridge and login', () {
+    expect(accountChannelsPath('slack', 'T1-U1'), '/settings/channels/slack/T1-U1');
+    expect(accountChannelsPath('work chat', '301/122'), '/settings/channels/work%20chat/301%2F122');
+  });
+
+  testWidgets("two accounts with the same profile are told apart by the bridge's name for each", (tester) async {
+    final twins = bridge('slack', 'Slack', [
+      login('T1-U1', 'Alex Rivera', remoteName: 'Northwind - alex@example.com', email: 'alex@example.com'),
+      login('T2-U9', 'Alex Rivera', remoteName: 'Atlas Labs - alex@example.com', email: 'alex@example.com'),
+    ]);
+    // Without one, or with one that only repeats the name, the handle shows.
+    final plain = bridge('discord', 'Discord', [
+      login('301', 'Alex Rivera', remoteName: 'Alex Rivera', email: 'alex@example.com'),
+    ]);
+    final hub = FakeBridges();
+    await tester.pumpWidget(app(hub, bridges: [twins, plain]));
+    await tester.pumpAndSettle();
+    expect(find.text('Slack · Northwind - alex@example.com'), findsOneWidget);
+    expect(find.text('Slack · Atlas Labs - alex@example.com'), findsOneWidget);
+    expect(find.text('Discord · alex@example.com'), findsOneWidget);
+
+    // The account's page says the same at the top.
+    await tester.pumpWidget(KeyedSubtree(key: UniqueKey(), child: app(hub, bridges: [twins], account: 'slack/T2-U9')));
+    await tester.pumpAndSettle();
+    expect(find.text('Alex Rivera'), findsOneWidget);
+    expect(find.text('Slack · Atlas Labs - alex@example.com'), findsOneWidget);
+  });
+
+  testWidgets("an account's page shows only its own servers or workspaces and their channels", (tester) async {
+    final hub = FakeBridges();
+    await tester.pumpWidget(app(hub, account: 'discord/301'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Discord channels'), findsOneWidget);
+    expect(find.text('Alex Rivera'), findsOneWidget);
+    expect(find.text('Northwind'), findsNothing);
+    expect(find.text('Atlas Labs'), findsNothing);
+    expect(hub.calls.map((c) => c.$2), ['/bridges/discord/provision/switchboard/v1/channels?login_id=301']);
+
+    // Discord's two servers start closed and say what's on.
     expect(find.text('Atlas'), findsOneWidget);
     expect(find.text('Harbour'), findsOneWidget);
     expect(find.text('None of 1 on'), findsOneWidget);
-    expect(find.text('None of 2 on'), findsNWidgets(2));
-    expect(find.text('1 of 1 on'), findsOneWidget);
-    expect(channelSwitch(tester, 'T2/C1').value, isTrue, reason: 'the saved selection');
-    expect(channelSwitch(tester, 'T1/C1').value, isFalse);
-    expect(find.byIcon(Icons.lock_outline_rounded), findsOneWidget, reason: 'the private channel');
+    expect(find.text('None of 2 on'), findsOneWidget);
+    expect(find.byType(SwitchListTile), findsNothing);
 
     // Both servers have a #general; each sits under its own server.
     await expand(tester, 'Atlas');
@@ -191,13 +273,38 @@ void main() {
     expect(find.byKey(const ValueKey('g-atlas/c-a-general')), findsOneWidget);
     expect(find.byKey(const ValueKey('g-harbour/c-h-general')), findsOneWidget);
     expect(find.text('Projects'), findsOneWidget, reason: "the channel's category");
+
+    // A workspace by itself opens, showing the saved selection.
+    await tester.pumpWidget(KeyedSubtree(key: UniqueKey(), child: app(hub, account: 'slack/T2-U9')));
+    await tester.pumpAndSettle();
+    expect(find.text('Slack channels'), findsOneWidget);
+    expect(find.text('Atlas Labs'), findsNWidgets(2), reason: 'the account and its workspace');
+    expect(find.text('Northwind'), findsNothing);
+    expect(find.text('1 of 1 on'), findsOneWidget);
+    expect(channelSwitch(tester, 'T2/C1').value, isTrue, reason: 'the saved selection');
+
+    await tester.pumpWidget(KeyedSubtree(key: UniqueKey(), child: app(hub, account: 'slack/T1-U1')));
+    await tester.pumpAndSettle();
+    expect(find.text('None of 2 on'), findsOneWidget);
+    expect(channelSwitch(tester, 'T1/C1').value, isFalse);
+    expect(find.byIcon(Icons.lock_outline_rounded), findsOneWidget, reason: 'the private channel');
+    expect(find.byKey(const ValueKey('T2/C1')), findsNothing);
+  });
+
+  testWidgets("an account that isn't linked any more says so", (tester) async {
+    final hub = FakeBridges();
+    await tester.pumpWidget(app(hub, account: 'slack/T9-U9'));
+    await tester.pumpAndSettle();
+    expect(find.text("This account isn't linked any more."), findsOneWidget);
+    expect(find.byType(SwitchListTile), findsNothing);
+    expect(hub.calls, isEmpty);
   });
 
   testWidgets('selecting shows as on only once the bridge has saved it; deselecting likewise', (tester) async {
     final hub = FakeBridges();
     final saving = Completer<void>();
     hub.scripted['/T1/C1'] = saving;
-    await tester.pumpWidget(app(hub));
+    await tester.pumpWidget(app(hub, account: 'slack/T1-U1'));
     await tester.pumpAndSettle();
 
     await tapChannel(tester, 'T1/C1');
@@ -222,12 +329,11 @@ void main() {
 
     // Another account's selection is its own.
     expect(hub.selected['slack/T2-U9'], {'C1'});
-    expect(channelSwitch(tester, 'T2/C1').value, isTrue);
   });
 
   testWidgets('Discord channels select through the same flow', (tester) async {
     final hub = FakeBridges();
-    await tester.pumpWidget(app(hub));
+    await tester.pumpWidget(app(hub, account: 'discord/301'));
     await tester.pumpAndSettle();
     await expand(tester, 'Harbour');
 
@@ -248,7 +354,7 @@ void main() {
 
   testWidgets('a rejected or failed change says so and leaves the saved selection showing', (tester) async {
     final hub = FakeBridges();
-    await tester.pumpWidget(app(hub));
+    await tester.pumpWidget(app(hub, account: 'slack/T1-U1'));
     await tester.pumpAndSettle();
 
     // Rejected by the bridge.
@@ -258,13 +364,6 @@ void main() {
     expect(channelSwitch(tester, 'T1/C1').value, isFalse);
     expect(find.text("Couldn't turn on: This account isn't in that channel"), findsOneWidget);
     expect(find.text("Couldn't turn on general: This account isn't in that channel"), findsOneWidget);
-
-    // The save failed.
-    hub.scripted['/T2/C1'] = (500, '{"errcode":"M_UNKNOWN","error":"Couldn\'t save the selection"}');
-    await tapChannel(tester, 'T2/C1');
-    await tester.pumpAndSettle();
-    expect(channelSwitch(tester, 'T2/C1').value, isTrue, reason: 'still on: turning it off was not saved');
-    expect(find.text("Couldn't turn off: Couldn't save the selection"), findsOneWidget);
 
     // The server couldn't be reached.
     hub.scripted['/T1/C3'] = Exception('connection refused');
@@ -287,37 +386,51 @@ void main() {
     await tester.pumpAndSettle();
     expect(channelSwitch(tester, 'T1/C1').value, isTrue);
     expect(find.text("Couldn't turn on: This account isn't in that channel"), findsNothing);
+
+    // A save that fails leaves a channel that was on showing as on.
+    await tester.pumpWidget(KeyedSubtree(key: UniqueKey(), child: app(hub, account: 'slack/T2-U9')));
+    await tester.pumpAndSettle();
+    hub.scripted['/T2/C1'] = (500, '{"errcode":"M_UNKNOWN","error":"Couldn\'t save the selection"}');
+    await tapChannel(tester, 'T2/C1');
+    await tester.pumpAndSettle();
+    expect(channelSwitch(tester, 'T2/C1').value, isTrue, reason: 'still on: turning it off was not saved');
+    expect(find.text("Couldn't turn off: Couldn't save the selection"), findsOneWidget);
   });
 
   testWidgets('the saved selection shows again after reopening Settings and after a relaunch', (tester) async {
     final hub = FakeBridges();
-    await tester.pumpWidget(app(hub));
+    await tester.pumpWidget(app(hub, account: 'slack/T1-U1'));
     await tester.pumpAndSettle();
     await tapChannel(tester, 'T1/C3');
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(app(hub, account: 'discord/301'));
     await tester.pumpAndSettle();
     await expand(tester, 'Atlas');
     await tapChannel(tester, 'g-atlas/c-a-general');
     await tester.pumpAndSettle();
 
-    // Leave Settings and come back: fetched from the bridges again.
+    // Leave Settings and come back: fetched from the bridge again.
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
     hub.calls.clear();
-    await tester.pumpWidget(app(hub));
+    await tester.pumpWidget(app(hub, account: 'slack/T1-U1'));
     await tester.pumpAndSettle();
-    expect(hub.calls.where((c) => c.$1 == 'GET'), hasLength(3));
+    expect(hub.calls, [('GET', '/bridges/slack/provision/switchboard/v1/channels?login_id=T1-U1')]);
     expect(channelSwitch(tester, 'T1/C3').value, isTrue);
     expect(channelSwitch(tester, 'T1/C1').value, isFalse);
+    await tester.pumpWidget(app(hub, account: 'discord/301'));
+    await tester.pumpAndSettle();
     expect(channelSwitch(tester, 'g-atlas/c-a-general').value, isTrue, reason: 'open, as it has a channel on');
-    expect(channelSwitch(tester, 'T2/C1').value, isTrue, reason: "the other account's selection is untouched");
+    expect(hub.selected['slack/T2-U9'], {'C1'}, reason: "the other account's selection is untouched");
 
     // A relaunch starts with nothing in memory: a new provider scope.
     await tester.pumpWidget(const SizedBox());
-    await tester.pumpWidget(KeyedSubtree(key: UniqueKey(), child: app(hub)));
+    await tester.pumpWidget(KeyedSubtree(key: UniqueKey(), child: app(hub, account: 'slack/T1-U1')));
     await tester.pumpAndSettle();
     expect(channelSwitch(tester, 'T1/C3').value, isTrue);
+    await tester.pumpWidget(KeyedSubtree(key: UniqueKey(), child: app(hub, account: 'discord/301')));
+    await tester.pumpAndSettle();
     expect(channelSwitch(tester, 'g-atlas/c-a-general').value, isTrue);
-    expect(channelSwitch(tester, 'T2/C1').value, isTrue);
   });
 
   testWidgets('loading, empty and failed lists each say what is happening', (tester) async {
@@ -326,11 +439,9 @@ void main() {
     hub.scripted['/discord/provision/switchboard/v1/channels'] = loading;
     hub.scripted['/slack/provision/switchboard/v1/channels'] = (502, '{"errcode":"M_UNKNOWN","error":"ratelimited"}');
     hub.groups['discord/301'] = [];
-    await tester.pumpWidget(app(hub));
+    await tester.pumpWidget(app(hub, account: 'discord/301'));
     await settle(tester);
-
     expect(find.text('Loading channels…'), findsOneWidget);
-    expect(find.text("Couldn't load channels: ratelimited"), findsNWidgets(2));
 
     // Discord answers: the account is in no server with channels to show.
     loading.complete();
@@ -339,18 +450,22 @@ void main() {
     expect(find.text('Loading channels…'), findsNothing);
     expect(find.textContaining('No channels yet. Text channels this account can see'), findsOneWidget);
 
-    // Slack recovers; trying again fetches the list.
-    hub.scripted.clear();
-    await tester.tap(find.text('Try again').first);
+    await tester.pumpWidget(app(hub, account: 'slack/T1-U1'));
     await tester.pumpAndSettle();
     expect(find.text("Couldn't load channels: ratelimited"), findsOneWidget);
+
+    // Slack recovers; trying again fetches the list.
+    hub.scripted.clear();
+    await tester.tap(find.text('Try again'));
+    await tester.pumpAndSettle();
+    expect(find.text("Couldn't load channels: ratelimited"), findsNothing);
     expect(find.byKey(const ValueKey('T1/C1')), findsOneWidget);
   });
 
   testWidgets('a bridge from before channel selection says the server needs updating', (tester) async {
     final hub = FakeBridges();
     hub.scripted['/discord/provision/switchboard/v1/channels'] = (404, '404 page not found');
-    await tester.pumpWidget(app(hub, bridges: [discord]));
+    await tester.pumpWidget(app(hub, bridges: [discord], account: 'discord/301'));
     await tester.pumpAndSettle();
     expect(find.textContaining("This server's Discord bridge can't choose channels yet"), findsOneWidget);
   });
@@ -364,21 +479,26 @@ void main() {
     expect(hub.calls, isEmpty);
   });
 
-  testWidgets('while accounts load it shows progress, and a failure offers to try again', (tester) async {
-    final accounts = Completer<List<Bridge>>();
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        hubProvider.overrideWithValue(HubApi(FakeBridges().send)),
-        bridgesProvider.overrideWith((ref) => accounts.future),
-      ],
-      child: const MaterialApp(home: ChannelsScreen()),
-    ));
-    await tester.pump();
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+  for (final (name, screen) in <(String, Widget)>[
+    ('the account list', ChannelsScreen()),
+    ("an account's page", AccountChannelsScreen(bridgeId: 'slack', loginId: 'T1-U1')),
+  ]) {
+    testWidgets('while accounts load $name shows progress, and a failure offers to try again', (tester) async {
+      final accounts = Completer<List<Bridge>>();
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          hubProvider.overrideWithValue(HubApi(FakeBridges().send)),
+          bridgesProvider.overrideWith((ref) => accounts.future),
+        ],
+        child: MaterialApp(home: screen),
+      ));
+      await tester.pump();
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
 
-    accounts.completeError(HubException('the Hub is unreachable'));
-    await tester.pumpAndSettle();
-    expect(find.text("Couldn't load accounts: the Hub is unreachable"), findsOneWidget);
-    expect(find.text('Try again'), findsOneWidget);
-  });
+      accounts.completeError(HubException('the Hub is unreachable'));
+      await tester.pumpAndSettle();
+      expect(find.text("Couldn't load accounts: the Hub is unreachable"), findsOneWidget);
+      expect(find.text('Try again'), findsOneWidget);
+    });
+  }
 }

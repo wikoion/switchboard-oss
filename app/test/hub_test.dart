@@ -46,6 +46,7 @@ void main() {
       expect(wa.logins.single.state, 'CONNECTED');
       expect(wa.logins.single.name, 'Richard');
       expect(wa.logins.single.handle, '+447700900123');
+      expect(wa.logins.single.remoteName, '+44 7700 900123', reason: "the bridge's own name for the account");
 
       expect(bridges[2].supportsApi, isFalse);
       expect(bridges[2].reachable, isFalse);
