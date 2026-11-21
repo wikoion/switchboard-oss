@@ -6,9 +6,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -633,5 +635,55 @@ func TestSwitchboardSelectionSurvivesRelogin(t *testing.T) {
 	}
 	if !loaded.SwitchboardChannels["C1"] || !loaded.SwitchboardChannelsSeeded {
 		t.Errorf("selection lost in storage: %s", data)
+	}
+}
+
+func TestSwitchboardConversationsFromBoot(t *testing.T) {
+	boot := &slack.ClientUserBootResponse{}
+	add := func(list *[]slack.BootChannel, id string, set func(*slack.Channel)) {
+		var ch slack.BootChannel
+		ch.ID = id
+		if set != nil {
+			set(&ch.Channel)
+		}
+		*list = append(*list, ch)
+	}
+	add(&boot.Channels, "C1", nil)
+	add(&boot.Channels, "G1", func(ch *slack.Channel) { ch.IsPrivate = true })
+	add(&boot.Channels, "G2", func(ch *slack.Channel) { ch.IsMpIM = true; ch.IsPrivate = true })
+	add(&boot.IMs, "D1", nil)
+
+	ids := func(channels []*slack.Channel) []string {
+		var got []string
+		for _, ch := range channels {
+			if !ch.IsMember {
+				t.Errorf("%s isn't marked as joined", ch.ID)
+			}
+			got = append(got, ch.ID)
+		}
+		return got
+	}
+	if got := ids(conversationsFromBoot(boot, []string{"public_channel", "private_channel"})); !slices.Equal(got, []string{"C1", "G1"}) {
+		t.Errorf("channels = %v, want C1 and G1", got)
+	}
+	dms := conversationsFromBoot(boot, dmConversationTypes)
+	if got := ids(dms); !slices.Equal(got, []string{"G2", "D1"}) {
+		t.Errorf("DMs = %v, want G2 and D1", got)
+	}
+	if !dms[1].IsIM {
+		t.Error("a DM from the boot response isn't marked as one")
+	}
+	if conversationsFromBoot(nil, dmConversationTypes) != nil {
+		t.Error("conversations without a boot response")
+	}
+}
+
+func TestSwitchboardRefusedConversationList(t *testing.T) {
+	refused := fmt.Errorf("listing: %w", slack.SlackErrorResponse{Err: "not_allowed_token_type"})
+	if !slackRefusesConversationList(refused) {
+		t.Error("not_allowed_token_type isn't seen as a refused list")
+	}
+	if slackRefusesConversationList(slack.SlackErrorResponse{Err: "ratelimited"}) || slackRefusesConversationList(errors.New("timeout")) {
+		t.Error("another failure is seen as a refused list")
 	}
 }

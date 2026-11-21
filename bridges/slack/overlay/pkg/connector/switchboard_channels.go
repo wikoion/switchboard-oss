@@ -79,7 +79,9 @@ var (
 				Cursor:          cursor,
 				ExcludeArchived: true,
 			})
-			if err != nil {
+			if err != nil && page == 0 && slackRefusesConversationList(err) && s.IsRealUser {
+				return bootSwitchboardChannels(ctx, s)
+			} else if err != nil {
 				return nil, err
 			}
 			channels = append(channels, chunk...)
@@ -89,6 +91,21 @@ var (
 			cursor = nextCursor
 		}
 		return nil, fmt.Errorf("conversation pagination exceeded %d pages", maxSlackPaginationPages)
+	}
+	// bootSwitchboardChannels asks Slack for the account's boot data, as its
+	// own apps do on start, and returns the channels in it. This is the
+	// list for workspaces that refuse the conversation list.
+	bootSwitchboardChannels = func(ctx context.Context, s *SlackClient) ([]slack.Channel, error) {
+		boot, err := s.Client.ClientUserBootContext(ctx, time.Time{})
+		if err != nil {
+			return nil, err
+		}
+		found := conversationsFromBoot(boot, []string{"public_channel", "private_channel"})
+		channels := make([]slack.Channel, len(found))
+		for i, ch := range found {
+			channels[i] = *ch
+		}
+		return channels, nil
 	}
 	// bridgedSwitchboardChannelIDs lists the channels (not DMs) the login
 	// already has rooms for.
@@ -160,6 +177,68 @@ func (s *SlackClient) fetchChatInfoFresh(ctx context.Context, channelID string) 
 	}
 	s.chatInfoCache[channelID] = chatInfoCacheEntry{ts: time.Now(), data: info}
 	return info, nil
+}
+
+// slackRefusesConversationList reports whether Slack answered that this
+// account's token may not list its conversations. Enterprise workspaces
+// answer so for the tokens Slack's own apps use; the boot data lists the
+// same conversations.
+func slackRefusesConversationList(err error) bool {
+	var slackErr slack.SlackErrorResponse
+	return errors.As(err, &slackErr) && slackErr.Err == "not_allowed_token_type"
+}
+
+// conversationsFromBoot picks the conversations of the given types (as the
+// conversation list names them) out of Slack's boot data, which holds only
+// conversations the account is in.
+func conversationsFromBoot(boot *slack.ClientUserBootResponse, types []string) []*slack.Channel {
+	if boot == nil {
+		return nil
+	}
+	var found []*slack.Channel
+	for idx := range boot.Channels {
+		ch := &boot.Channels[idx].Channel
+		kind := "public_channel"
+		switch {
+		case ch.IsIM:
+			kind = "im"
+		case ch.IsMpIM:
+			kind = "mpim"
+		case ch.IsPrivate:
+			kind = "private_channel"
+		}
+		if slices.Contains(types, kind) {
+			// The boot data doesn't say so for each one.
+			ch.IsMember = true
+			found = append(found, ch)
+		}
+	}
+	if slices.Contains(types, "im") {
+		for idx := range boot.IMs {
+			ch := &boot.IMs[idx].Channel
+			ch.IsIM = true
+			ch.IsMember = true
+			found = append(found, ch)
+		}
+	}
+	return found
+}
+
+// conversationsForSyncFromBoot stands in for the conversation list in the
+// sync on connect when Slack refuses the list: the boot data from this
+// connection has the same conversations. The DMs and group DMs among them
+// are noted as the list would have them noted.
+func (s *SlackClient) conversationsForSyncFromBoot(ctx context.Context, err error, types []string) ([]*slack.Channel, bool) {
+	if !slackRefusesConversationList(err) || !s.IsRealUser || s.BootResp == nil {
+		return nil, false
+	}
+	channels := conversationsFromBoot(s.BootResp, types)
+	for _, ch := range channels {
+		s.addDMChannel(ch)
+	}
+	zerolog.Ctx(ctx).Debug().Int("channel_count", len(channels)).
+		Msg("Slack refused the conversation list; using the conversations from the boot response")
+	return channels, true
 }
 
 // slackSaysNoSuchChannel reports whether Slack answered that the channel

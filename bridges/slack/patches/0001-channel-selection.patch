@@ -10,6 +10,11 @@ channel is deselected. The helpers and the provisioning endpoints are in
 overlay/pkg/connector/switchboard_channels.go; overlay/pkg/slackid keeps the
 selection across a relink.
 
+Workspaces that refuse the conversation list (Enterprise Grid answers
+not_allowed_token_type to the tokens Slack's own apps use) get their DMs,
+group DMs and channels from the boot response instead, in the sync on
+connect and in the channel list.
+
 diff --git a/pkg/connector/backfill.go b/pkg/connector/backfill.go
 index d0e2a3d..19561fa 100644
 --- a/pkg/connector/backfill.go
@@ -37,7 +42,7 @@ index d0e2a3d..19561fa 100644
  	var maxMsgID string
  	for _, msg := range chunk.Messages {
 diff --git a/pkg/connector/client.go b/pkg/connector/client.go
-index 4768414..282e08d 100644
+index 4768414..aff80a2 100644
 --- a/pkg/connector/client.go
 +++ b/pkg/connector/client.go
 @@ -249,6 +249,7 @@ func (s *SlackClient) connect(ctx context.Context, bootResp *slack.ClientUserBoo
@@ -57,7 +62,21 @@ index 4768414..282e08d 100644
  }
  
  func (s *SlackClient) getLatestMessageIDs(ctx context.Context) map[string]string {
-@@ -555,6 +556,9 @@ func (s *SlackClient) syncChannels(ctx context.Context, channels []*slack.Channe
+@@ -498,6 +499,13 @@ func (s *SlackClient) fetchConversationsForSync(ctx context.Context, conversatio
+ 			Cursor: cursor,
+ 		})
+ 		if err != nil {
++			if pages == 1 {
++				// Switchboard: some workspaces refuse the list; the boot
++				// response has the same conversations.
++				if fromBoot, ok := s.conversationsForSyncFromBoot(ctx, err, conversationTypes); ok {
++					return fromBoot, nil
++				}
++			}
+ 			return nil, err
+ 		}
+ 		log.Debug().Int("chunk_size", len(channelsChunk)).Msg("Fetched chunk of conversations")
+@@ -555,6 +563,9 @@ func (s *SlackClient) syncChannels(ctx context.Context, channels []*slack.Channe
  			}
  		}
  	}
@@ -67,7 +86,7 @@ index 4768414..282e08d 100644
  	if latestMessageIDs != nil {
  		slices.SortFunc(channels, func(a, b *slack.Channel) int {
  			return cmp.Compare(latestMessageIDs[a.ID], latestMessageIDs[b.ID])
-@@ -599,7 +603,8 @@ func (s *SlackClient) syncChannels(ctx context.Context, channels []*slack.Channe
+@@ -599,7 +610,8 @@ func (s *SlackClient) syncChannels(ctx context.Context, channels []*slack.Channe
  	}
  	for portalKey := range existingPortals {
  		_, channelID := slackid.ParsePortalID(portalKey.ID)
